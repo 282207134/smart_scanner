@@ -1,0 +1,12 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Users/liuyu/Desktop/smart_scanner/build_temp/windows/x64/cmake_install.cmake",
+		"C:/Users/liuyu/Desktop/smart_scanner/build_temp/windows/x64/flutter/cmake_install.cmake",
+		"C:/Users/liuyu/Desktop/smart_scanner/build_temp/windows/x64/runner/cmake_install.cmake",
+		"C:/Users/liuyu/Desktop/smart_scanner/build_temp/windows/x64/plugins/file_selector_windows/cmake_install.cmake",
+		"C:/Users/liuyu/Desktop/smart_scanner/build_temp/windows/x64/plugins/jni/cmake_install.cmake",
+		"C:/Users/liuyu/Desktop/smart_scanner/build_temp/windows/x64/plugins/jni/shared/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

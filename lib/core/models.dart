@@ -104,6 +104,14 @@ enum FlattenMode {
   final String label;
 }
 
+enum BookPage {
+  left('左页'),
+  right('右页');
+
+  const BookPage(this.label);
+  final String label;
+}
+
 /// OCR 识别语言（服务端0xC2 languageIndex）
 enum OcrLanguage {
   chineseEnglish('中文简体,English', 0),

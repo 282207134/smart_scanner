@@ -59,6 +59,20 @@ class _SettingsBarState extends State<SettingsBar> {
                 c.setFlattenMode,
                 format: (v) => v.label,
               ),
+            if (book && c.flattenMode == FlattenMode.singlePage)
+              _select(
+                '扫描书页',
+                c.bookPage,
+                BookPage.values,
+                c.setBookPage,
+                format: (v) => v.label,
+              ),
+            if (book && c.flattenMode != FlattenMode.none)
+              TextButton.icon(
+                onPressed: c.resetBookSeam,
+                icon: const Icon(Icons.center_focus_strong, size: 16),
+                label: Text(c.bookSeamManual ? '重新识别中线' : '自动识别中线'),
+              ),
             if (c.mode == ScanMode.document ||
                 book ||
                 c.mode == ScanMode.barcode) ...[

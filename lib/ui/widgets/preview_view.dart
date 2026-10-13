@@ -195,6 +195,10 @@ class _PreviewViewState extends State<PreviewView> {
                       regions: c.detectedDocuments,
                       manual: c.manualRegion,
                       seam: c.bookSeam,
+                      bookLayout: c.bookLayout,
+                      bookPage: c.flattenMode == FlattenMode.singlePage
+                          ? c.bookPage
+                          : null,
                       connected: c.connected,
                       previewOpen: c.previewOpen,
                       statusMessage: c.statusMessage,
@@ -212,7 +216,11 @@ class _PreviewViewState extends State<PreviewView> {
                   if (c.previewOpen && !c.busy && c.cutMode == CutMode.manual)
                     _hint('拖动四个角点贴合文件边缘；拖出新区域可重新框选'),
                   if (c.previewOpen && !c.busy && c.mode == ScanMode.book)
-                    _hint('拖动中间虚线对齐书脊；书页四周需要留出背景'),
+                    _hint(
+                      c.bookSeamManual
+                          ? '手动中线 · 拖动虚线对齐书脊，或点击“重新识别中线”'
+                          : '自动识别书脊与书页边界 · 可拖动虚线手动调整',
+                    ),
                   if (c.previewOpen &&
                       !c.busy &&
                       (c.cutMode == CutMode.auto ||
@@ -301,10 +309,14 @@ class _PreviewViewState extends State<PreviewView> {
       _dragStart = null;
       return;
     }
+    final seamX =
+        c.bookLayout?.spineX(
+          (point.dy - _contentFit.top) / _contentFit.height,
+        ) ??
+        c.bookSeam;
     _dragSeam =
         c.mode == ScanMode.book &&
-        (point.dx - (_contentFit.left + c.bookSeam * _contentFit.width)).abs() <
-            28;
+        (point.dx - (_contentFit.left + seamX * _contentFit.width)).abs() < 28;
   }
 
   Widget _hint(String text) => Positioned(
@@ -371,6 +383,8 @@ class _PreviewPainter extends CustomPainter {
   final List<DocumentRegion> regions;
   final DocumentRegion? manual;
   final double seam;
+  final BookLayout? bookLayout;
+  final BookPage? bookPage;
   final bool connected;
   final bool previewOpen;
   final String statusMessage;
@@ -384,6 +398,8 @@ class _PreviewPainter extends CustomPainter {
     required this.regions,
     required this.manual,
     required this.seam,
+    this.bookLayout,
+    this.bookPage,
     required this.connected,
     required this.previewOpen,
     required this.statusMessage,
@@ -445,17 +461,29 @@ class _PreviewPainter extends CustomPainter {
           }
         }
       case ScanMode.book:
-        for (final region in regions) {
-          _region(canvas, region, borderPaint);
+        for (var i = 0; i < regions.length; i++) {
+          if (bookPage != null && regions.length == 2 && bookPage!.index != i) {
+            continue;
+          }
+          _region(
+            canvas,
+            regions[i],
+            borderPaint,
+            label: regions.length == 2 ? BookPage.values[i].label : null,
+          );
         }
-        // 书脊中缝虚线
-        final mid = contentRect.left + contentRect.width * seam;
+        Offset point(ScanPoint p) => Offset(
+          contentRect.left + contentRect.width * p.x,
+          contentRect.top + contentRect.height * p.y,
+        );
+        final top = point(bookLayout?.spineTop ?? ScanPoint(seam, 0));
+        final bottom = point(bookLayout?.spineBottom ?? ScanPoint(seam, 1));
         final dash = Paint()
           ..strokeWidth = 2
           ..color = AppColors.guide;
-        _dashedVertical(canvas, mid, contentRect.top, contentRect.bottom, dash);
+        _dashedLine(canvas, top, bottom, dash);
         canvas.drawCircle(
-          Offset(mid, contentRect.center.dy),
+          (top + bottom) / 2,
           9,
           Paint()..color = AppColors.accent,
         );
@@ -567,22 +595,17 @@ class _PreviewPainter extends CustomPainter {
     }
   }
 
-  void _dashedVertical(
-    Canvas canvas,
-    double x,
-    double top,
-    double bottom,
-    Paint paint,
-  ) {
+  void _dashedLine(Canvas canvas, Offset top, Offset bottom, Paint paint) {
     const dashLen = 8.0, gap = 6.0;
-    double y = top;
-    while (y < bottom) {
+    final delta = bottom - top, length = delta.distance;
+    if (length == 0) return;
+    final direction = delta / length;
+    for (double distance = 0; distance < length; distance += dashLen + gap) {
       canvas.drawLine(
-        Offset(x, y),
-        Offset(x, math.min(y + dashLen, bottom)),
+        top + direction * distance,
+        top + direction * math.min(distance + dashLen, length),
         paint,
       );
-      y += dashLen + gap;
     }
   }
 
@@ -624,6 +647,8 @@ class _PreviewPainter extends CustomPainter {
       old.regions != regions ||
       old.manual != manual ||
       old.seam != seam ||
+      old.bookLayout != bookLayout ||
+      old.bookPage != bookPage ||
       old.previewOpen != previewOpen ||
       old.statusMessage != statusMessage;
 }

@@ -42,6 +42,7 @@ class AppController extends ChangeNotifier {
   final Map<ScanMode, OutputFormat> _modeFormats = {};
   NameStyle nameStyle = NameStyle.dateTime;
   FlattenMode flattenMode = FlattenMode.none;
+  BookPage bookPage = BookPage.left;
   OcrLanguage ocrLanguage = OcrLanguage.chineseEnglish;
   bool smartEdge = false, removeBg = false, autoScan = false, multiPage = false;
   bool mergeIdSides = false, qrcode = false;
@@ -88,6 +89,8 @@ class AppController extends ChangeNotifier {
   List<DocumentRegion> detectedDocuments = [];
   DocumentRegion? manualRegion = DocumentRegion.inset;
   double bookSeam = .5;
+  bool bookSeamManual = false;
+  BookLayout? bookLayout;
   double previewImageX = 0,
       previewImageY = 0,
       previewImageWidth = 1,
@@ -428,12 +431,30 @@ class AppController extends ChangeNotifier {
     _lastDetection = DateTime.now();
     final generation = _visionGeneration;
     try {
-      final regions = await compute(DocumentVision.detectRgb, (
-        f.rgb,
-        f.width,
-        f.height,
-      ));
+      final BookLayout? layout;
+      final List<DocumentRegion> regions;
+      if (mode == ScanMode.book) {
+        final detected = await compute(DocumentVision.detectBookRgb, (
+          f.rgb,
+          f.width,
+          f.height,
+          bookSeamManual ? bookSeam : null,
+        ));
+        layout = detected;
+        regions = detected.pages;
+      } else {
+        layout = null;
+        regions = await compute(DocumentVision.detectRgb, (
+          f.rgb,
+          f.width,
+          f.height,
+        ));
+      }
       if (_disposed || generation != _visionGeneration) return;
+      bookLayout = layout;
+      if (!bookSeamManual && layout?.spineTop != null) {
+        bookSeam = (layout!.spineTop!.x + layout.spineBottom!.x) / 2;
+      }
       detectedDocuments = regions;
       notifyListeners();
     } catch (e) {
@@ -736,6 +757,7 @@ class AppController extends ChangeNotifier {
       return;
     }
     capturing = true;
+    lastError = null;
     notifyListeners();
     try {
       _applySettings();
@@ -759,12 +781,13 @@ class AppController extends ChangeNotifier {
         manual: manualRegion,
         smartEdge: smartEdge,
         removeBackground: removeBg,
+        bookPage: bookPage,
       );
       final output = book
           ? await compute(DocumentVision.flattenBook, (
               request,
               flattenMode,
-              bookSeam,
+              bookSeamManual ? bookSeam : null,
             ))
           : await compute(DocumentVision.process, request);
       for (var i = 0; i < output.images.length; i++) {
@@ -776,7 +799,9 @@ class AppController extends ChangeNotifier {
         await _saveCapture(output.images[i], '$base$suffix');
       }
       if (book) {
-        statusMessage = '书籍拍摄完成 · ${output.images.length} 页';
+        statusMessage =
+            '书籍拍摄完成 · ${output.images.length} 页'
+            '${output.notice.isEmpty ? '' : ' · ${output.notice}'}';
       } else if (output.images.length > 1) {
         statusMessage = '已分别保存 ${output.images.length} 个文档';
       }
@@ -1060,9 +1085,23 @@ class AppController extends ChangeNotifier {
 
   void setBookSeam(double value) {
     if (!busy && !recording && !autoScan) {
+      _visionGeneration++;
+      bookSeamManual = true;
+      bookLayout = null;
       bookSeam = value.clamp(.15, .85);
       notifyListeners();
     }
+  }
+
+  void resetBookSeam() {
+    if (busy || recording || autoScan) return;
+    _visionGeneration++;
+    bookSeamManual = false;
+    bookLayout = null;
+    detectedDocuments = [];
+    bookSeam = .5;
+    _lastDetection = DateTime.fromMillisecondsSinceEpoch(0);
+    notifyListeners();
   }
 
   Future<void> openFile(String path, {bool reveal = false}) async {
@@ -1128,6 +1167,7 @@ class AppController extends ChangeNotifier {
     if (m == mode) return;
     _modeFormats[mode] = outputFormat;
     mode = m;
+    _resetGeometry();
     if (m != ScanMode.document && cutMode == CutMode.multiImg) {
       cutMode = CutMode.auto;
     }
@@ -1150,6 +1190,7 @@ class AppController extends ChangeNotifier {
       nameStyle = availableNameStyles.first;
     }
     if (m != ScanMode.document && m != ScanMode.book) multiPage = false;
+    if (multiPage) outputFormat = OutputFormat.imagePdf;
     _changed();
   }
 
@@ -1191,6 +1232,12 @@ class AppController extends ChangeNotifier {
 
   void setFlattenMode(FlattenMode v) {
     flattenMode = v;
+    _changed();
+  }
+
+  void setBookPage(BookPage v) {
+    if (busy || recording || autoScan) return;
+    bookPage = v;
     _changed();
   }
 
@@ -1361,6 +1408,10 @@ class AppController extends ChangeNotifier {
     _visionGeneration++;
     detectedDocuments = [];
     manualRegion = DocumentRegion.inset;
+    bookLayout = null;
+    bookSeamManual = false;
+    bookSeam = .5;
+    _lastDetection = DateTime.fromMillisecondsSinceEpoch(0);
   }
 
   Future<void> manualFocus() async {

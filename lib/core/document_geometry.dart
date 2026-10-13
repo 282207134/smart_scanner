@@ -71,3 +71,15 @@ class DocumentRegion {
         );
   }
 }
+
+class BookLayout {
+  final List<DocumentRegion> pages;
+  final ScanPoint? spineTop, spineBottom;
+  const BookLayout(this.pages, {this.spineTop, this.spineBottom});
+
+  double? spineX(double y) {
+    final a = spineTop, b = spineBottom;
+    if (a == null || b == null || (b.y - a.y).abs() < .001) return null;
+    return a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y);
+  }
+}

@@ -11,12 +11,14 @@ class VisionRequest {
   final CutMode cut;
   final ColorEffect effect;
   final DocumentRegion? manual;
+  final BookPage bookPage;
   final bool smartEdge, removeBackground;
   const VisionRequest(
     this.bytes, {
     this.cut = CutMode.none,
     this.effect = ColorEffect.native,
     this.manual,
+    this.bookPage = BookPage.left,
     this.smartEdge = false,
     this.removeBackground = false,
   });
@@ -25,7 +27,8 @@ class VisionRequest {
 class VisionOutput {
   final List<Uint8List> images;
   final List<DocumentRegion> regions;
-  const VisionOutput(this.images, this.regions);
+  final String notice;
+  const VisionOutput(this.images, this.regions, {this.notice = ''});
 }
 
 /// Portable OpenCV processing. All native allocations stay inside one isolate.
@@ -535,57 +538,114 @@ class DocumentVision {
     }
   }
 
-  /// Correct a small preview/capture offset using a long crease near the
-  /// user's guide. Short table edges and distant page borders are excluded.
+  static BookLayout detectBookRgb((Uint8List, int, int, double?) input) {
+    final rgb = cv.Mat.fromList(
+      input.$3,
+      input.$2,
+      cv.MatType.CV_8UC3,
+      input.$1,
+    );
+    final source = cv.cvtColor(rgb, cv.COLOR_RGB2BGR);
+    try {
+      return detectBook(source, seam: input.$4);
+    } finally {
+      source.dispose();
+      rgb.dispose();
+    }
+  }
+
+  /// A guide is a prior, not a fixed half-image cut. Automatic detection searches
+  /// the spread; a manually moved guide restricts the capture calibration.
   static double bookSpine(cv.Mat source, double hint) {
-    final line = _bookSpineLine(source, hint);
+    final regions = detect(source);
+    if (regions.isEmpty) return hint;
+    final spread = regions.reduce((a, b) => a.area > b.area ? a : b);
+    final line = _bookSpineLine(source, spread, null, prior: hint);
     return (line.$1 + line.$2) / 2;
   }
 
-  /// Normalized x at the top and bottom of the image, including spine tilt.
-  static (double, double) _bookSpineLine(cv.Mat source, double hint) {
-    final scale = math.min(1.0, 700 / source.cols);
+  static (double, double) _bookSpineLine(
+    cv.Mat source,
+    DocumentRegion spread,
+    double? hint, {
+    double? prior,
+  }) {
+    final scale = math.min(1.0, 900 / source.cols);
     final small = cv.resize(source, (
       (source.cols * scale).round(),
       (source.rows * scale).round(),
     ));
     final gray = cv.cvtColor(small, cv.COLOR_BGR2GRAY);
-    final left = ((hint - .065) * small.cols).round().clamp(0, small.cols - 2);
-    final right = ((hint + .065) * small.cols).round().clamp(
-      left + 2,
-      small.cols,
-    );
+    final width = spread.right - spread.left;
+    final center = hint ?? prior ?? (spread.left + spread.right) / 2;
+    final left =
+        ((hint == null ? spread.left + width * .23 : hint - .065) * small.cols)
+            .round()
+            .clamp(0, small.cols - 2);
+    final right =
+        ((hint == null ? spread.right - width * .23 : hint + .065) * small.cols)
+            .round()
+            .clamp(left + 2, small.cols);
     final rect = cv.Rect(left, 0, right - left, small.rows);
     final strip = cv.Mat.fromMat(gray, roi: rect, copy: true);
     rect.dispose();
     final blur = cv.gaussianBlur(strip, (3, 3), .8);
-    final edges = cv.canny(blur, 25, 75);
+    final edges = cv.canny(blur, 20, 60);
+    final height = (spread.bottom - spread.top) * small.rows;
     final lines = cv.HoughLinesP(
       edges,
       1,
-      math.pi / 180,
+      math.pi / 360,
       30,
-      minLineLength: small.rows * .38,
-      maxLineGap: small.rows * .06,
+      minLineLength: height * .58,
+      maxLineGap: height * .08,
     );
     try {
-      var result = (hint, hint), best = 0.0;
+      var result = (center, center), best = 0.0;
+      final pixels = edges.data;
+      final y0 = (spread.top * small.rows + height * .06).round();
+      final y1 = (spread.bottom * small.rows - height * .06).round();
       for (var i = 0; i < lines.rows; i++) {
         final line = lines.at<cv.Vec4i>(i, 0);
         try {
-          final dx = (line.val3 - line.val1).abs();
-          final dy = (line.val4 - line.val2).abs();
-          if (dy < small.rows * .38 || dx > small.cols * .025) continue;
-          final x = left + (line.val1 + line.val3) / 2;
-          final score = dy - (x - hint * small.cols).abs() * 2;
+          final dx = line.val3 - line.val1, dy = line.val4 - line.val2;
+          if (dy.abs() < height * .58 || dx.abs() > height * .3) continue;
+          final slope = dx / dy;
+          final intercept = line.val1 - slope * line.val2;
+          final top = (left + intercept) / small.cols;
+          final bottom = (left + intercept + slope * small.rows) / small.cols;
+          final mid = (top + bottom) / 2;
+          if (mid < spread.left + width * .15 ||
+              mid > spread.right - width * .15) {
+            continue;
+          }
+          // A crease continues through the page height. Text columns and table
+          // borders usually supply only a short or intermittent vertical edge.
+          var support = 0;
+          for (var j = 0; j < 40; j++) {
+            final y = (y0 + (y1 - y0) * j / 39).round().clamp(
+              0,
+              edges.rows - 1,
+            );
+            final x = (intercept + slope * y).round();
+            var found = false;
+            for (var offset = -3; offset <= 3; offset++) {
+              final px = x + offset;
+              if (px >= 0 &&
+                  px < edges.cols &&
+                  pixels[y * edges.cols + px] > 0) {
+                found = true;
+              }
+            }
+            if (found) support++;
+          }
+          final coverage = support / 40;
+          if (coverage < .55) continue;
+          final score =
+              dy.abs() / height + coverage * 2 - (mid - center).abs() / width;
           if (score > best) {
             best = score;
-            final slope = (line.val3 - line.val1) / (line.val4 - line.val2);
-            final top = left + line.val1 - slope * line.val2;
-            result = (
-              (top / small.cols).clamp(.15, .85),
-              ((top + slope * small.rows) / small.cols).clamp(.15, .85),
-            );
+            result = (top.clamp(.05, .95), bottom.clamp(.05, .95));
           }
         } finally {
           line.dispose();
@@ -602,25 +662,36 @@ class DocumentVision {
     }
   }
 
-  static List<DocumentRegion> _bookRegions(
-    cv.Mat source,
-    FlattenMode mode,
-    double hint,
-  ) {
+  static BookLayout detectBook(cv.Mat source, {double? seam}) {
     final regions = detect(source);
-    if (regions.isEmpty) {
-      throw StateError('未检测到完整书页边界，请留出四周边缘并调整书脊线');
-    }
+    if (regions.isEmpty) return const BookLayout([]);
     DocumentRegion largest(Iterable<DocumentRegion> items) =>
         items.reduce((a, b) => a.area > b.area ? a : b);
-    if (mode == FlattenMode.singlePage) return [largest(regions)];
-    final line = _bookSpineLine(source, hint);
-    final seam = (line.$1 + line.$2) / 2;
-    final spreads = regions.where(
-      (r) => r.left < seam - .05 && r.right > seam + .05,
-    );
-    if (spreads.isNotEmpty) {
-      final spread = largest(spreads), p = spread.corners;
+    final spread = largest(regions);
+    final principal = regions
+        .where((r) => r.area >= spread.area * .25)
+        .toList();
+    final center =
+        seam ??
+        (principal.map((r) => r.left).reduce(math.min) +
+                principal.map((r) => r.right).reduce(math.max)) /
+            2;
+    final left = principal.where((r) => (r.left + r.right) / 2 < center);
+    final right = principal.where((r) => (r.left + r.right) / 2 >= center);
+    List<DocumentRegion> pages;
+    final aspect =
+        (spread.right - spread.left) *
+        source.cols /
+        ((spread.bottom - spread.top) * source.rows);
+    if (left.isNotEmpty &&
+        right.isNotEmpty &&
+        largest(left).overlap(largest(right)) < .1) {
+      pages = [largest(left), largest(right)];
+    } else if (aspect < .95) {
+      return BookLayout([spread]);
+    } else {
+      final line = _bookSpineLine(source, spread, seam);
+      final p = spread.corners;
       ScanPoint intersect(ScanPoint a, ScanPoint b, double margin) {
         final dx = b.x - a.x, dy = b.y - a.y;
         final slope = line.$2 - line.$1;
@@ -629,10 +700,7 @@ class DocumentVision {
         return ScanPoint(a.x + dx * t, a.y + dy * t);
       }
 
-      // A few pixels of shared gutter protect ink near a slightly curved
-      // crease. Split on the measured tilted spine before warping the page;
-      // a vertical half-image ROI would irreversibly clip the other end.
-      return [
+      final fallback = [
         DocumentRegion([
           p[0],
           intersect(p[0], p[1], .003),
@@ -646,17 +714,68 @@ class DocumentVision {
           intersect(p[3], p[2], -.003),
         ]),
       ];
+      // Detect each page independently so the two sloping top/bottom borders
+      // are not forced into the four corners of one flat spread.
+      final scale = math.min(1.0, 900 / math.max(source.cols, source.rows));
+      final small = cv.resize(source, (
+        (source.cols * scale).round(),
+        (source.rows * scale).round(),
+      ));
+      try {
+        pages = List.generate(2, (side) {
+          final data = Uint8List.fromList(small.data);
+          for (var y = 0; y < small.rows; y++) {
+            final x =
+                ((line.$1 +
+                            (line.$2 - line.$1) * y / small.rows +
+                            (side == 0 ? .003 : -.003)) *
+                        small.cols)
+                    .round()
+                    .clamp(0, small.cols);
+            final start = y * small.cols * 3;
+            data.fillRange(
+              side == 0 ? start + x * 3 : start,
+              side == 0 ? start + small.cols * 3 : start + x * 3,
+              0,
+            );
+          }
+          final half = cv.Mat.fromList(
+            small.rows,
+            small.cols,
+            cv.MatType.CV_8UC3,
+            data,
+          );
+          try {
+            // Mask boundaries can form a large quadrilateral in the background.
+            // Keep page refinements close to the detected spread's extent.
+            final margin = (spread.bottom - spread.top) * .05;
+            final found = detect(half).where(
+              (r) =>
+                  r.area >= fallback[side].area * .6 &&
+                  r.top >= spread.top - margin &&
+                  r.bottom <= spread.bottom + margin,
+            );
+            return found.isEmpty ? fallback[side] : largest(found);
+          } finally {
+            half.dispose();
+          }
+        });
+      } finally {
+        small.dispose();
+      }
     }
-    final left = regions.where((r) => (r.left + r.right) / 2 < seam);
-    final right = regions.where((r) => (r.left + r.right) / 2 >= seam);
-    if (left.isEmpty || right.isEmpty) {
-      throw StateError('未检测到两张完整书页，请对齐书脊并留出四周边缘');
-    }
-    return [largest(left), largest(right)];
+    ScanPoint midpoint(ScanPoint a, ScanPoint b) =>
+        ScanPoint((a.x + b.x) / 2, (a.y + b.y) / 2);
+    return BookLayout(
+      pages,
+      spineTop: midpoint(pages[0].corners[1], pages[1].corners[0]),
+      spineBottom: midpoint(pages[0].corners[2], pages[1].corners[3]),
+    );
   }
 
-  static VisionOutput flattenBook((VisionRequest, FlattenMode, double) args) {
+  static VisionOutput flattenBook((VisionRequest, FlattenMode, double?) args) {
     final request = args.$1, mode = args.$2;
+    if (mode == FlattenMode.none) return process(request);
     final source = cv.imdecode(request.bytes, cv.IMREAD_COLOR);
     if (source.isEmpty) {
       source.dispose();
@@ -664,7 +783,19 @@ class DocumentVision {
     }
     final images = <Uint8List>[];
     try {
-      final regions = _bookRegions(source, mode, args.$3.clamp(.15, .85));
+      final layout = detectBook(source, seam: args.$3?.clamp(.15, .85));
+      if (layout.pages.isEmpty) throw StateError('未检测到完整书页边界，请留出四周边缘');
+      if (mode != FlattenMode.singlePage && layout.pages.length != 2) {
+        throw StateError('未检测到两张完整书页，请留出四周边缘或选择单页展平');
+      }
+      final regions = mode == FlattenMode.singlePage
+          ? [
+              layout.pages[layout.pages.length == 1
+                  ? 0
+                  : request.bookPage.index],
+            ]
+          : layout.pages;
+      var notice = '';
       for (final region in regions) {
         final page = warp(source, region);
         try {
@@ -676,7 +807,11 @@ class DocumentVision {
           }
           final curves = textCurves(page);
           if (curves.length < 3) {
-            throw StateError('书页曲线不足以可靠展平，请调整光线、角度或先使用双页分割');
+            images.add(
+              _encodeEffect(page, request.effect, request.removeBackground),
+            );
+            notice = '文字行不足，本次仅矫正书页透视';
+            continue;
           }
           final flattened = remapCurves(page, curves);
           try {
@@ -694,7 +829,7 @@ class DocumentVision {
           page.dispose();
         }
       }
-      return VisionOutput(images, []);
+      return VisionOutput(images, regions, notice: notice);
     } finally {
       source.dispose();
     }

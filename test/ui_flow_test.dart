@@ -63,6 +63,41 @@ Future<AppController> pumpApp(
 }
 
 void main() {
+  testWidgets('文档与书籍切换时，多页 PDF 和输出格式保持一致', (tester) async {
+    final c = await pumpApp(tester);
+    c.setMultiPage(true);
+    for (final mode in [ScanMode.book, ScanMode.document]) {
+      c.setMode(mode);
+      await tester.pumpAndSettle();
+      expect(c.multiPage, isTrue);
+      expect(c.outputFormat, OutputFormat.imagePdf);
+      expect(find.text('多页 PDF'), findsOneWidget);
+      expect(find.text('图像PDF'), findsOneWidget);
+    }
+    c.setOutputFormat(OutputFormat.png);
+    await tester.pumpAndSettle();
+    expect(c.multiPage, isFalse);
+    expect(c.outputFormat, OutputFormat.png);
+  });
+  testWidgets('单页展平可选择左右页，手动中线可以恢复自动识别', (tester) async {
+    final c = await pumpApp(tester);
+    c.setMode(ScanMode.book);
+    c.setFlattenMode(FlattenMode.singlePage);
+    await tester.pumpAndSettle();
+    expect(find.text('扫描书页'), findsOneWidget);
+    await tester.tap(find.byType(DropdownButton<BookPage>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('右页').last);
+    await tester.pumpAndSettle();
+    expect(c.bookPage, BookPage.right);
+    c.setBookSeam(.66);
+    await tester.pumpAndSettle();
+    expect(c.bookSeamManual, isTrue);
+    await tester.tap(find.text('重新识别中线'));
+    await tester.pumpAndSettle();
+    expect(c.bookSeamManual, isFalse);
+    expect(find.text('自动识别中线'), findsOneWidget);
+  });
   testWidgets('拍摄按钮处理时失去焦点后，Ctrl+S 仍可导出', (tester) async {
     final controller = ShortcutController();
     await pumpApp(tester, controller: controller);

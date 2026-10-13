@@ -24,7 +24,12 @@ class LeftToolbar extends StatelessWidget {
             _btn(Icons.zoom_out, '缩小', c.zoomOut),
             _btn(Icons.filter_1, '1:1 实际大小', c.trueSize),
             _btn(Icons.fit_screen, '适合窗口', c.fitToWindow),
-            _btn(Icons.center_focus_strong, '手动对焦', c.manualFocus),
+            _btn(
+              Icons.center_focus_strong,
+              c.focusing ? '正在重新对焦…' : '手动对焦',
+              c.canCapture ? c.manualFocus : null,
+              active: c.focusing,
+            ),
             const Divider(color: AppColors.divider, height: 16),
             _btn(
               Icons.auto_mode,
@@ -44,7 +49,7 @@ class LeftToolbar extends StatelessWidget {
   Widget _btn(
     IconData icon,
     String tooltip,
-    VoidCallback onTap, {
+    VoidCallback? onTap, {
     bool active = false,
   }) {
     return Tooltip(

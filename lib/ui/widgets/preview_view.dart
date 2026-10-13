@@ -88,12 +88,18 @@ class _PreviewViewState extends State<PreviewView> {
         builder: (context, constraints) {
           final w = constraints.maxWidth;
           final h = constraints.maxHeight;
+          final pixelRatio = c.supportsHighDensityPreview
+              ? MediaQuery.devicePixelRatioOf(context)
+              : 1.0;
           _previewSize = Size(w, h);
           // 画布尺寸请求（带迟滞）
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             if (w.isFinite && h.isFinite) {
-              c.setCanvasSize(w.round(), h.round());
+              c.setCanvasSize(
+                (w * pixelRatio).round(),
+                (h * pixelRatio).round(),
+              );
             }
           });
 
@@ -168,7 +174,10 @@ class _PreviewViewState extends State<PreviewView> {
                     d.scale == 1.0) {
                   final delta = d.localFocalPoint - _dragStart!;
                   if (delta.distance > 6) {
-                    c.panDrag(delta.dx.round(), delta.dy.round());
+                    c.panDrag(
+                      (delta.dx * c.canvasW / _currentFit.width).round(),
+                      (delta.dy * c.canvasH / _currentFit.height).round(),
+                    );
                     _dragStart = d.localFocalPoint;
                   }
                 }

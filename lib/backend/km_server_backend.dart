@@ -369,7 +369,7 @@ class KmServerBackend implements ScannerBackend {
   }
 
   @override
-  void manualFocus() => _simple(KmCmd.manualFocus);
+  Future<void> manualFocus() async => _simple(KmCmd.manualFocus);
 
   @override
   void rotate(int angle) {

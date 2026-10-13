@@ -199,7 +199,10 @@ void main() {
     await tester.tap(find.text('证件').first);
     await tester.pumpAndSettle();
     expect(c.mode, ScanMode.idCard);
-    expect(find.text('读取身份证'), findsOneWidget);
+    expect(
+      find.text('读取身份证'),
+      Platform.isMacOS ? findsNothing : findsOneWidget,
+    );
   });
 
   testWidgets('参数栏改输出效果会传到控制器', (tester) async {

@@ -157,7 +157,8 @@ class MacAvfBackend implements ScannerBackend {
   void moveOffset(int px, int py, int xDir, int yDir) =>
       _set('pan', [xDir == 0 ? -px : px, yDir == 0 ? -py : py]);
   @override
-  void manualFocus() => _set('focus', true);
+  Future<void> manualFocus() =>
+      _channel.invokeMethod<void>('setting', {'key': 'focus', 'value': true});
   @override
   void setCutMode(int mode) => _set('cutMode', mode);
   @override

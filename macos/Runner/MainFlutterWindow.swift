@@ -103,21 +103,29 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
             let input = try AVCaptureDeviceInput(device: device)
             guard self.session.canAddInput(input) else { throw NSError(domain: "无法打开摄像头", code: 1) }
             self.session.addInput(input)
-            self.session.sessionPreset = .inputPriority
-            let wantedWidth = args["width"] as? Int ?? 1920, wantedHeight = args["height"] as? Int ?? 1080
-            if let format = device.formats.first(where: {
-              let dim = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
-              return Int(dim.width) == wantedWidth && Int(dim.height) == wantedHeight
-            }) { try device.lockForConfiguration(); device.activeFormat = format; device.unlockForConfiguration() }
+            if self.session.canSetSessionPreset(.high) { self.session.sessionPreset = .high }
             let output = AVCaptureVideoDataOutput()
             output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
             output.alwaysDiscardsLateVideoFrames = true
             output.setSampleBufferDelegate(self, queue: self.queue)
             guard self.session.canAddOutput(output) else { throw NSError(domain: "无法开启视频输出", code: 1) }
             self.session.addOutput(output)
+            let wantedWidth = args["width"] as? Int ?? 1920, wantedHeight = args["height"] as? Int ?? 1080
+            guard let format = device.formats.first(where: {
+              let dim = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
+              return Int(dim.width) == wantedWidth && Int(dim.height) == wantedHeight
+            }) else { throw NSError(domain: "设备不支持所选分辨率", code: 1) }
+            // macOS may change activeFormat when committing or starting the session.
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            device.activeFormat = format
+            self.activateAutoFocus(on: device, restart: false)
+            self.canvasW = args["canvasW"] as? Int ?? 640; self.canvasH = args["canvasH"] as? Int ?? 480
+            self.latest = nil
+            self.session.commitConfiguration()
+            self.session.startRunning()
+            self.reply(result, nil)
           } catch { self.session.commitConfiguration(); throw error }
-          self.canvasW = args["canvasW"] as? Int ?? 640; self.canvasH = args["canvasH"] as? Int ?? 480
-          self.latest = nil; self.session.commitConfiguration(); self.session.startRunning(); self.reply(result, nil)
         case "close":
           if self.session.isRunning { self.session.stopRunning() }; self.latest = nil; self.reply(result, nil)
         case "capture", "captureRaw":
@@ -164,13 +172,37 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
           case "pan": if let values = value as? [Int], values.count == 2 { self.pan.x += CGFloat(values[0]); self.pan.y -= CGFloat(values[1]) }
           case "removeBg": self.removeBg = value as? Bool ?? false
           case "smartEdge": self.smartEdge = value as? Bool ?? false
-          case "focus": if let input = self.session.inputs.first as? AVCaptureDeviceInput, input.device.isFocusModeSupported(.autoFocus) { try input.device.lockForConfiguration(); input.device.focusMode = .autoFocus; input.device.unlockForConfiguration() }
+          case "focus":
+            guard self.session.isRunning, let input = self.session.inputs.first as? AVCaptureDeviceInput else { throw NSError(domain: "请先打开相机预览", code: 1) }
+            let device = input.device
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            guard self.activateAutoFocus(on: device, restart: true) else { throw NSError(domain: "当前相机不支持自动对焦，请调整镜头或拍摄距离", code: 1) }
           default: break
           }; self.reply(result, nil)
         default: self.reply(result, FlutterMethodNotImplemented)
         }
       } catch { self.failure(result, error.localizedDescription) }
     }
+  }
+  @discardableResult
+  private func activateAutoFocus(on device: AVCaptureDevice, restart: Bool) -> Bool {
+    // Many UVC cameras support continuous autofocus, but not single-shot autofocus.
+    let mode: AVCaptureDevice.FocusMode
+    if restart && device.isFocusModeSupported(.autoFocus) {
+      mode = .autoFocus
+    } else if device.isFocusModeSupported(.continuousAutoFocus) {
+      mode = .continuousAutoFocus
+    } else if device.isFocusModeSupported(.autoFocus) {
+      mode = .autoFocus
+    } else {
+      return false
+    }
+    // Toggle out of autofocus so another click starts a new focus scan.
+    if restart && device.isFocusModeSupported(.locked) { device.focusMode = .locked }
+    if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = CGPoint(x: 0.5, y: 0.5) }
+    device.focusMode = mode
+    return true
   }
   private func process(_ original: CIImage, capture: Bool) throws -> CIImage {
     var image = original.oriented(forExifOrientation: [1, 6, 3, 8][rotation % 4])
@@ -209,8 +241,9 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
       rgba.withUnsafeMutableBytes { ptr in context.render(transformed, toBitmap: ptr.baseAddress!, rowBytes: fw * 4, bounds: area, format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB()) }
       var rgb = Data(count: fw * fh * 3)
       rgb.withUnsafeMutableBytes { (ptr: UnsafeMutableRawBufferPointer) in
+        // Core Image bitmap rows already match Flutter's top-to-bottom order.
         for y in 0..<fh { for x in 0..<fw {
-          let src = ((fh - 1 - y) * fw + x) * 4, dst = (y * fw + x) * 3
+          let src = (y * fw + x) * 4, dst = (y * fw + x) * 3
           ptr[dst] = rgba[src]; ptr[dst + 1] = rgba[src + 1]; ptr[dst + 2] = rgba[src + 2]
         } }
       }

@@ -54,7 +54,9 @@ abstract class ScannerBackend {
   void rotateRight();
   void rotate(int angle);
   void moveOffset(int px, int py, int xDir, int yDir);
-  void manualFocus();
+
+  /// Completes when the refocus request is sent/accepted, not when the lens settles.
+  Future<void> manualFocus();
 
   // ---- 处理参数 ----
   void setCutMode(int mode); // 0无 1自动 2手动 3自定义

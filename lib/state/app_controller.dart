@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -56,7 +57,10 @@ class AppController extends ChangeNotifier {
   final List<CapturedPage> pages = [];
   int selectedPage = -1;
   final Set<String> selectedPaths = {};
-  bool capturing = false, exporting = false, recognizing = false;
+  bool capturing = false,
+      exporting = false,
+      recognizing = false,
+      focusing = false;
   String lastCapturePath = '',
       lastExportPath = '',
       lastBarcode = '',
@@ -73,6 +77,7 @@ class AppController extends ChangeNotifier {
   int markCorner = 3;
   String? lastError;
   Timer? _canvasTimer;
+  (int, int)? _pendingCanvasSize;
   Timer? _recordTimer;
   Timer? _autoTimer;
   AutoScanDetector? _autoDetector;
@@ -95,7 +100,7 @@ class AppController extends ChangeNotifier {
 
   ScannerBackend get backend => _backend!;
   ScanFileStore get _files => ScanFileStore(outputDir);
-  bool get busy => capturing || exporting || recognizing;
+  bool get busy => capturing || exporting || recognizing || focusing;
   bool get canCapture =>
       connected &&
       previewOpen &&
@@ -109,6 +114,7 @@ class AppController extends ChangeNotifier {
       ? pages[selectedPage]
       : null;
   (int, int) get canvasSize => (canvasW, canvasH);
+  bool get supportsHighDensityPreview => _backend is MacAvfBackend;
   bool supportsResolution(ScanResolution size) =>
       resolutions.any((r) => r.width == size.width && r.height == size.height);
   List<OutputFormat> get availableFormats => switch (mode) {
@@ -341,11 +347,27 @@ class AppController extends ChangeNotifier {
 
   Future<void> setCanvasSize(int w, int h) async {
     if (_disposed) return;
-    final nw = (w ~/ 10 * 10).clamp(320, 1920),
-        nh = (h ~/ 10 * 10).clamp(240, 1440);
-    if (nw == canvasW && nh == canvasH) return;
+    final nw = (w ~/ 10 * 10).clamp(
+          320,
+          supportsHighDensityPreview ? 3840 : 1920,
+        ),
+        nh = (h ~/ 10 * 10).clamp(
+          240,
+          supportsHighDensityPreview ? 2160 : 1440,
+        );
+    if (nw == canvasW && nh == canvasH) {
+      _canvasTimer?.cancel();
+      _pendingCanvasSize = null;
+      return;
+    }
+    // Frame notifications rebuild the preview. Repeated requests for the same
+    // size must not keep postponing the resize until the camera stops streaming.
+    if (_pendingCanvasSize == (nw, nh)) return;
     _canvasTimer?.cancel();
+    _pendingCanvasSize = (nw, nh);
     _canvasTimer = Timer(const Duration(milliseconds: 350), () {
+      _pendingCanvasSize = null;
+      _canvasTimer = null;
       if (_disposed) return;
       if (busy || recording || autoScan) return;
       canvasW = nw;
@@ -1341,7 +1363,27 @@ class AppController extends ChangeNotifier {
     manualRegion = DocumentRegion.inset;
   }
 
-  void manualFocus() => _view((b) => b.manualFocus());
+  Future<void> manualFocus() async {
+    if (_disposed || !canCapture) return;
+    focusing = true;
+    lastError = null;
+    statusMessage = '正在重新对焦…';
+    notifyListeners();
+    try {
+      await backend.manualFocus();
+      if (!_disposed) statusMessage = '已触发重新对焦，请等待画面稳定';
+    } catch (e) {
+      if (!_disposed) {
+        final detail = e is PlatformException ? e.message ?? e.code : '$e';
+        _error('对焦失败：$detail');
+      }
+    } finally {
+      focusing = false;
+      notifyListeners();
+      if (_openAgain && !_disposed) unawaited(reopenPreview());
+    }
+  }
+
   void setCutRect(int x, int y, int w, int h) {
     if (busy || recording || autoScan) return;
     if (w <= 0 || h <= 0) {

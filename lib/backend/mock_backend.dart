@@ -229,7 +229,7 @@ class MockBackend implements ScannerBackend {
   @override
   void moveOffset(int px, int py, int xDir, int yDir) {}
   @override
-  void manualFocus() {}
+  Future<void> manualFocus() async {}
   @override
   void setCutMode(int mode) {}
   @override

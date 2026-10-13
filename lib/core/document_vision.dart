@@ -33,6 +33,17 @@ class VisionOutput {
 
 /// Portable OpenCV processing. All native allocations stay inside one isolate.
 class DocumentVision {
+  static cv.Mat _resizeForDetection(cv.Mat source) {
+    final scale = math.min(1.0, 900 / math.max(source.cols, source.rows));
+    return cv.resize(source, (
+      (source.cols * scale).round(),
+      (source.rows * scale).round(),
+    ));
+  }
+
+  static DocumentRegion _largest(Iterable<DocumentRegion> regions) =>
+      regions.reduce((a, b) => a.area > b.area ? a : b);
+
   static List<DocumentRegion> detectRgb((Uint8List, int, int) input) {
     final rgb = cv.Mat.fromList(
       input.$3,
@@ -65,13 +76,7 @@ class DocumentVision {
     }
 
     try {
-      final scale = math.min(1.0, 900 / math.max(source.cols, source.rows));
-      final small = keep(
-        cv.resize(source, (
-          (source.cols * scale).round(),
-          (source.rows * scale).round(),
-        )),
-      );
+      final small = keep(_resizeForDetection(source));
       final gray = keep(
         cv.cvtColor(small, rgb ? cv.COLOR_RGB2GRAY : cv.COLOR_BGR2GRAY),
       );
@@ -237,7 +242,7 @@ class DocumentVision {
           throw StateError('没有检测到完整文档边界，请将文件放入画面、留出边缘，或使用手动裁切');
         }
         if (request.cut != CutMode.multiImg && regions.isNotEmpty) {
-          regions = [regions.reduce((a, b) => a.area > b.area ? a : b)];
+          regions = [_largest(regions)];
         }
       }
       final images = <Uint8List>[];
@@ -559,7 +564,7 @@ class DocumentVision {
   static double bookSpine(cv.Mat source, double hint) {
     final regions = detect(source);
     if (regions.isEmpty) return hint;
-    final spread = regions.reduce((a, b) => a.area > b.area ? a : b);
+    final spread = _largest(regions);
     final line = _bookSpineLine(source, spread, null, prior: hint);
     return (line.$1 + line.$2) / 2;
   }
@@ -665,9 +670,7 @@ class DocumentVision {
   static BookLayout detectBook(cv.Mat source, {double? seam}) {
     final regions = detect(source);
     if (regions.isEmpty) return const BookLayout([]);
-    DocumentRegion largest(Iterable<DocumentRegion> items) =>
-        items.reduce((a, b) => a.area > b.area ? a : b);
-    final spread = largest(regions);
+    final spread = _largest(regions);
     final principal = regions
         .where((r) => r.area >= spread.area * .25)
         .toList();
@@ -678,15 +681,17 @@ class DocumentVision {
             2;
     final left = principal.where((r) => (r.left + r.right) / 2 < center);
     final right = principal.where((r) => (r.left + r.right) / 2 >= center);
+    final leftPage = left.isEmpty ? null : _largest(left);
+    final rightPage = right.isEmpty ? null : _largest(right);
     List<DocumentRegion> pages;
     final aspect =
         (spread.right - spread.left) *
         source.cols /
         ((spread.bottom - spread.top) * source.rows);
-    if (left.isNotEmpty &&
-        right.isNotEmpty &&
-        largest(left).overlap(largest(right)) < .1) {
-      pages = [largest(left), largest(right)];
+    if (leftPage != null &&
+        rightPage != null &&
+        leftPage.overlap(rightPage) < .1) {
+      pages = [leftPage, rightPage];
     } else if (aspect < .95) {
       return BookLayout([spread]);
     } else {
@@ -716,11 +721,7 @@ class DocumentVision {
       ];
       // Detect each page independently so the two sloping top/bottom borders
       // are not forced into the four corners of one flat spread.
-      final scale = math.min(1.0, 900 / math.max(source.cols, source.rows));
-      final small = cv.resize(source, (
-        (source.cols * scale).round(),
-        (source.rows * scale).round(),
-      ));
+      final small = _resizeForDetection(source);
       try {
         pages = List.generate(2, (side) {
           final data = Uint8List.fromList(small.data);
@@ -755,7 +756,7 @@ class DocumentVision {
                   r.top >= spread.top - margin &&
                   r.bottom <= spread.bottom + margin,
             );
-            return found.isEmpty ? fallback[side] : largest(found);
+            return found.isEmpty ? fallback[side] : _largest(found);
           } finally {
             half.dispose();
           }
@@ -798,34 +799,25 @@ class DocumentVision {
       var notice = '';
       for (final region in regions) {
         final page = warp(source, region);
+        cv.Mat? flattened;
         try {
-          if (mode == FlattenMode.split) {
-            images.add(
-              _encodeEffect(page, request.effect, request.removeBackground),
-            );
-            continue;
+          if (mode != FlattenMode.split) {
+            final curves = textCurves(page);
+            if (curves.length < 3) {
+              notice = '文字行不足，本次仅矫正书页透视';
+            } else {
+              flattened = remapCurves(page, curves);
+            }
           }
-          final curves = textCurves(page);
-          if (curves.length < 3) {
-            images.add(
-              _encodeEffect(page, request.effect, request.removeBackground),
-            );
-            notice = '文字行不足，本次仅矫正书页透视';
-            continue;
-          }
-          final flattened = remapCurves(page, curves);
-          try {
-            images.add(
-              _encodeEffect(
-                flattened,
-                request.effect,
-                request.removeBackground,
-              ),
-            );
-          } finally {
-            flattened.dispose();
-          }
+          images.add(
+            _encodeEffect(
+              flattened ?? page,
+              request.effect,
+              request.removeBackground,
+            ),
+          );
         } finally {
+          flattened?.dispose();
           page.dispose();
         }
       }

@@ -678,24 +678,19 @@ class AppController extends ChangeNotifier {
     );
     final f = outputFormat;
     String text = '';
-    final path = await _files.uniquePath(base, multiPage ? '.jpg' : f.ext);
-    if (multiPage ||
-        [
-          OutputFormat.jpg,
-          OutputFormat.png,
-          OutputFormat.bmp,
-          OutputFormat.tif,
-          OutputFormat.txtJpg,
-        ].contains(f)) {
+    final path = await _files.uniquePath(base, f.ext);
+    if ([
+      OutputFormat.jpg,
+      OutputFormat.png,
+      OutputFormat.bmp,
+      OutputFormat.tif,
+      OutputFormat.txtJpg,
+    ].contains(f)) {
       await DocumentExporter.save(
         path,
-        await compute(_encodeRaster, (
-          bytes,
-          multiPage ? OutputFormat.jpg : f,
-          jpgQuality,
-        )),
+        await compute(_encodeRaster, (bytes, f, jpgQuality)),
       );
-      if (f == OutputFormat.txtJpg && !multiPage) {
+      if (f == OutputFormat.txtJpg) {
         await File('$path.txt').writeAsString(lastBarcode, flush: true);
       }
     } else if (f == OutputFormat.imagePdf) {

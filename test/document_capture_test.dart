@@ -137,6 +137,31 @@ void main() {
       hasLength(1),
     );
   });
+  test('多页 PDF 的输出选项生成真正的 PDF，书籍左右页也不被改存 JPG', () async {
+    for (final mode in [ScanMode.document, ScanMode.book]) {
+      final c = await setup();
+      c.setMode(mode);
+      c.setFlattenMode(FlattenMode.split);
+      c.setMultiPage(true);
+      expect(c.outputFormat, OutputFormat.imagePdf);
+      await c.capture();
+      expect(c.lastError, isNull);
+      expect(c.pages, hasLength(2));
+      for (final page in c.pages) {
+        expect(page.filePath, endsWith('.pdf'));
+        final bytes = await File(page.filePath).readAsBytes();
+        expect(String.fromCharCodes(bytes.take(4)), '%PDF');
+        expect(
+          img.decodeImage(await File(page.sourcePath).readAsBytes()),
+          isNotNull,
+        );
+      }
+      await c.exportPdf();
+      expect(c.lastError, isNull);
+      expect(c.lastExportPath, endsWith('.pdf'));
+      expect(File(c.lastExportPath).existsSync(), isTrue);
+    }
+  });
   test('裁切失败保留完整原图、停止自动扫描并恢复可拍摄状态', () async {
     final blank = img.Image(width: 320, height: 240);
     img.fill(blank, color: img.ColorRgb8(240, 240, 240));

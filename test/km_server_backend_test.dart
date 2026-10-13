@@ -112,6 +112,19 @@ void main() {
     await expectLater(open(backend), throwsStateError);
     expect(backend.isOpen, isFalse);
   });
+  test('厂商按四像素取整的预览可确认打开，空白边不算打开失败', () async {
+    final backend = await serverBackend((socket, _) {
+      socket.add(preview(544, 408, x: 217));
+    });
+    await backend.open(
+      deviceIndex: 0,
+      canvasW: 980,
+      canvasH: 410,
+      captureW: 2592,
+      captureH: 1944,
+    );
+    expect(backend.isOpen, isTrue);
+  });
 
   test('旧画布的小帧不能冒充新画布打开成功', () async {
     final backend = await serverBackend((socket, _) {

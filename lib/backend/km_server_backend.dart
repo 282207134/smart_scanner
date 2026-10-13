@@ -590,14 +590,15 @@ class KmServerBackend implements ScannerBackend {
         }
       case KmFrame(:final width, :final height, :final x, :final y, :final rgb):
         // Some KHServer versions stream the requested view without sending 01.
-        // Only a centered frame covering the new canvas can confirm this open;
-        // smaller queued frames from the previous view must not satisfy it.
+        // KHServer aligns RGB view dimensions to four pixels (410 -> 408).
+        // Allow that small rounding gap, while still requiring a centered
+        // frame covering the new canvas; smaller old views cannot confirm it.
         if (_openPending != null &&
             x >= 0 &&
             y >= 0 &&
             x + width <= _canvasW &&
             y + height <= _canvasH &&
-            (width == _canvasW || height == _canvasH) &&
+            (width >= _canvasW - 3 || height >= _canvasH - 3) &&
             (x * 2 + width - _canvasW).abs() <= 2 &&
             (y * 2 + height - _canvasH).abs() <= 2) {
           _openPending!.complete(true);

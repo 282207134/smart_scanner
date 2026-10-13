@@ -431,25 +431,17 @@ class AppController extends ChangeNotifier {
     _lastDetection = DateTime.now();
     final generation = _visionGeneration;
     try {
-      final BookLayout? layout;
-      final List<DocumentRegion> regions;
-      if (mode == ScanMode.book) {
-        final detected = await compute(DocumentVision.detectBookRgb, (
-          f.rgb,
-          f.width,
-          f.height,
-          bookSeamManual ? bookSeam : null,
-        ));
-        layout = detected;
-        regions = detected.pages;
-      } else {
-        layout = null;
-        regions = await compute(DocumentVision.detectRgb, (
-          f.rgb,
-          f.width,
-          f.height,
-        ));
-      }
+      final layout = mode == ScanMode.book
+          ? await compute(DocumentVision.detectBookRgb, (
+              f.rgb,
+              f.width,
+              f.height,
+              bookSeamManual ? bookSeam : null,
+            ))
+          : null;
+      final List<DocumentRegion> regions = layout != null
+          ? layout.pages
+          : await compute(DocumentVision.detectRgb, (f.rgb, f.width, f.height));
       if (_disposed || generation != _visionGeneration) return;
       bookLayout = layout;
       if (!bookSeamManual && layout?.spineTop != null) {
@@ -700,6 +692,7 @@ class AppController extends ChangeNotifier {
     final f = outputFormat;
     String text = '';
     final path = await _files.uniquePath(base, f.ext);
+    final List<int> output;
     if ([
       OutputFormat.jpg,
       OutputFormat.png,
@@ -707,29 +700,21 @@ class AppController extends ChangeNotifier {
       OutputFormat.tif,
       OutputFormat.txtJpg,
     ].contains(f)) {
-      await DocumentExporter.save(
-        path,
-        await compute(_encodeRaster, (bytes, f, jpgQuality)),
-      );
-      if (f == OutputFormat.txtJpg) {
-        await File('$path.txt').writeAsString(lastBarcode, flush: true);
-      }
+      output = await compute(_encodeRaster, (bytes, f, jpgQuality));
     } else if (f == OutputFormat.imagePdf) {
-      await DocumentExporter.save(
-        path,
-        await compute(DocumentExporter.imagePdf, [bytes]),
-      );
+      output = await compute(DocumentExporter.imagePdf, [bytes]);
     } else {
       text = await _recognize(source);
       if (text.trim().isEmpty) throw StateError('没有识别到文字；原图已保存在 $source');
-      await DocumentExporter.save(
-        path,
-        f == OutputFormat.txt
-            ? utf8.encode(text)
-            : DocumentExporter.office(text, f),
-      );
-      lastOcrText = text;
+      output = f == OutputFormat.txt
+          ? utf8.encode(text)
+          : DocumentExporter.office(text, f);
     }
+    await DocumentExporter.save(path, output);
+    if (f == OutputFormat.txtJpg) {
+      await File('$path.txt').writeAsString(lastBarcode, flush: true);
+    }
+    if (text.isNotEmpty) lastOcrText = text;
     await _addPage(path, bytes, sourcePath: source, text: text);
     statusMessage = multiPage
         ? '已加入多页文档 · ${pages.length} 页'
@@ -1095,12 +1080,7 @@ class AppController extends ChangeNotifier {
 
   void resetBookSeam() {
     if (busy || recording || autoScan) return;
-    _visionGeneration++;
-    bookSeamManual = false;
-    bookLayout = null;
-    detectedDocuments = [];
-    bookSeam = .5;
-    _lastDetection = DateTime.fromMillisecondsSinceEpoch(0);
+    _resetDetection();
     notifyListeners();
   }
 
@@ -1405,9 +1385,13 @@ class AppController extends ChangeNotifier {
   });
 
   void _resetGeometry() {
+    _resetDetection();
+    manualRegion = DocumentRegion.inset;
+  }
+
+  void _resetDetection() {
     _visionGeneration++;
     detectedDocuments = [];
-    manualRegion = DocumentRegion.inset;
     bookLayout = null;
     bookSeamManual = false;
     bookSeam = .5;

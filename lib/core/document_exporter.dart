@@ -12,8 +12,20 @@ import 'models.dart';
 
 /// All exports consume copies of image bytes; original scans are never moved.
 class DocumentExporter {
-  static List<Uint8List> splitBook(Uint8List bytes) {
+  static img.Image? _decodeColor(Uint8List bytes) {
     final image = img.decodeImage(bytes);
+    return image == null ? null : _expandGray(image);
+  }
+
+  static img.Image _expandGray(img.Image image) {
+    if (image.numChannels >= 3) return image;
+    // Single-channel PNG pixels expose green/blue as zero in package:image.
+    // Expand luminance before RGB encoding or compositing; retain gray alpha.
+    return image.convert(numChannels: image.hasAlpha ? 4 : 3);
+  }
+
+  static List<Uint8List> splitBook(Uint8List bytes) {
+    final image = _decodeColor(bytes);
     if (image == null || image.width < 2) {
       throw const FormatException('无法读取书籍图像');
     }
@@ -44,9 +56,10 @@ class DocumentExporter {
     if (image == null) throw const FormatException('无法读取图像');
     return Uint8List.fromList(switch (format) {
       OutputFormat.png => img.encodePng(image),
-      OutputFormat.bmp => img.encodeBmp(image),
+      // Avoid the encoder's incomplete 8-bit palette and 24-bit bitfields.
+      OutputFormat.bmp => img.encodeBmp(image.convert(numChannels: 4)),
       OutputFormat.tif => img.encodeTiff(image),
-      _ => img.encodeJpg(image, quality: quality),
+      _ => img.encodeJpg(_expandGray(image), quality: quality),
     });
   }
 
@@ -54,7 +67,7 @@ class DocumentExporter {
     if (images.isEmpty) throw StateError('没有可导出的图像');
     final pdf = pw.Document();
     for (final bytes in images) {
-      final image = img.decodeImage(bytes);
+      final image = _decodeColor(bytes);
       if (image == null) throw const FormatException('PDF 中包含无法读取的图像');
       final raster = pw.MemoryImage(img.encodeJpg(image, quality: 95));
       final format = image.width > image.height
@@ -73,7 +86,7 @@ class DocumentExporter {
   }
 
   static Uint8List mergeCards(Uint8List front, Uint8List back) {
-    final a = img.decodeImage(front), b = img.decodeImage(back);
+    final a = _decodeColor(front), b = _decodeColor(back);
     if (a == null || b == null) throw const FormatException('无法读取证件图像');
     final width = a.width > b.width ? a.width : b.width;
     final second = img.copyResize(b, width: width);
@@ -94,7 +107,7 @@ class DocumentExporter {
     double size,
     int corner,
   ) {
-    final image = img.decodeImage(bytes), mark = img.decodeImage(markBytes);
+    final image = _decodeColor(bytes), mark = _decodeColor(markBytes);
     if (image == null || mark == null) throw const FormatException('无法读取签名或印章');
     final margin = math.min(
       (image.width * .03).round(),

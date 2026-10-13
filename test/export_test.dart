@@ -23,6 +23,10 @@ void main() {
       final decoded = img.decodeImage(bytes)!;
       expect(decoded.width, 30);
       expect(decoded.height, 40);
+      final pixel = decoded.getPixel(10, 10);
+      expect(pixel.r, closeTo(120, 3), reason: format.name);
+      expect(pixel.g, closeTo(40, 3), reason: format.name);
+      expect(pixel.b, closeTo(180, 3), reason: format.name);
       expect(img.findDecoderForData(bytes)!.format, switch (format) {
         OutputFormat.jpg => img.ImageFormat.jpg,
         OutputFormat.png => img.ImageFormat.png,

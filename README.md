@@ -2,7 +2,7 @@
 
 Flutter 桌面扫描客户端，参考科密高拍仪软件、SDK 示例和参数文档。Windows 通过本机 KMServer 接入扫描仪；macOS 通过 AVFoundation 接入 USB/UVC 摄像头。文档检测、透视裁切、曲线矫正、自动扫描、页面管理和导出采用共用代码。
 
-Windows 已使用当前连接的 USB Camera 开发和实拍。macOS 原生接入代码已实现，但尚未在 Mac 上编译和连接设备验收。
+Windows 已使用当前连接的 USB Camera 开发和实拍。macOS 已在 Mac 上完成 Release 构建、摄像头授权、USB 相机实时预览和 2592×1944 JPG 实拍；其它 Mac 功能仍需分别验收。
 
 ## 使用
 
@@ -29,6 +29,12 @@ Windows 运行包：`build/SmartScanner-Windows-1.2.1.zip`。解压完整文件�
 
 Windows 采集会切换至所选传感器尺寸，触发对焦并选择等待期间较清晰的完整图像，再恢复预览。图像处理在后台执行，JPG、PNG、BMP、TIF 和 PDF 均按实际格式编码。
 
+macOS 打开相机时启用设备支持的自动对焦；左侧“手动对焦”按钮重新触发对焦，并显示请求结果。不支持单次对焦的 USB 相机会使用连续自动对焦，不支持自动对焦的设备会提示调整镜头或拍摄距离。镜头稳定需要短暂时间。Retina 预览按屏幕实际像素生成，窗口放大后同步更新预览尺寸。
+
+分辨率菜单读取当前选择的摄像头，按像素数量从大到小显示全部可用尺寸，切换设备时重新读取。macOS 目前从视频帧保存照片，菜单对应 AVFoundation 视频采集尺寸；仪器可能还提供独立的高分辨率静态拍照模式，该模式尚未接入，不能把视频流上限当作仪器的拍照上限。
+
+预览外侧使用深蓝网格，可拖动视频且限制在画布边界内。左侧工具栏倒数第三个按钮缩小并居中画面，最后一个按钮最大化画面；Mac 最大化时视频高度与画布高度一致，缩小时为适合画布尺寸的 85%。这两个按钮不改变拍摄分辨率。Windows 使用厂商适合窗口及缩小命令，尚未重新实机验收。
+
 ## 其他功能与限制
 
 - 文档扫描、旋转、设备参数、文档色彩处理、分页、命名避重、选页排序和本地 PDF 合并。
@@ -38,7 +44,7 @@ Windows 采集会切换至所选传感器尺寸，触发对焦并选择等待期
 - 摄像头和屏幕录像，MP4/WMV/AVI。已验收 Windows 摄像头三种格式；屏幕录制和 macOS 录像仍需实机验收。
 - 条码/二维码接口已接入，但尚未使用清晰实物条码完成识别验收；身份证信息读取需要专用读卡器。
 - 搜索文字 PDF、完整打印设置、手指消除、水印设置和原稿表格恢复尚未完成。
-- macOS 摄像头权限、原生编译、设备稳定性和全部处理流程需要 Mac 实机验收，不能以 Windows 测试代替。
+- macOS 设备长期稳定性、OCR、目录授权恢复和其它处理流程仍需 Mac 实机验收，不能以 Windows 测试代替。
 - Windows 部分窗口测试进程仍偶发异常退出；Ctrl+S 实机导出尚未通过，请使用“导出 PDF”按钮。
 
 详细验证结果和剩余项目见 [验证记录](docs/验证记录.md)。
@@ -56,6 +62,8 @@ dart run tool/hardware_test.dart
 flutter build windows --release
 flutter build macos --release
 ```
+
+macOS 本次使用 Flutter 3.47.7 / Dart 3.13.5、Xcode 26.0.1 和 CMake 4.4.4。项目 `.fvmrc` 固定 SDK，使用 `fvm install`、`fvm flutter pub get`、`fvm flutter build macos --release --no-pub` 构建，开发运行用 `fvm flutter run -d macos`。CMake 需在 PATH 中；缺少时可用 `brew install cmake` 安装。运行包位于 `build/macos/Build/Products/Release/smart_scanner.app`。首次启动在底部选择“USB相机”，避免使用 Mac 内置摄像头。
 
 真机脚本运行前关闭扫描客户端。`tool/test_windows.ps1` 包含静态检查、核心测试和各个窗口场景的独立测试进程；遇到失败即退出。演示启动参数为 `--mock`。
 

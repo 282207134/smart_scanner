@@ -5,6 +5,7 @@
 //
 // 覆盖: 连接 -> 枚举设备/分辨率 -> 开流(计帧率) -> 拍照存盘 -> OCR -> PDF合成
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:image/image.dart' as img;
@@ -178,37 +179,88 @@ Future<void> main() async {
     }
 
     // 10. 摄像头录像（不录制用户桌面）。
-    final videoPath = '${outDir.path}${Platform.pathSeparator}camera_test.mp4';
-    await backend.startRecord(videoPath, 0);
-    await Future.delayed(const Duration(seconds: 4));
-    await backend.stopRecord();
-    check(
-      '摄像头 MP4 已保存',
-      File(videoPath).existsSync() && File(videoPath).lengthSync() > 1000,
-    );
-    final probe = await Process.run('ffprobe', [
-      '-v',
-      'error',
-      '-select_streams',
-      'v:0',
-      '-show_entries',
-      'stream=width,height,duration',
-      '-of',
-      'csv=p=0',
-      videoPath,
-    ]);
-    final metadata = '${probe.stdout}'.trim().split(',');
-    final duration = metadata.length > 2
-        ? double.tryParse(metadata[2]) ?? 0
-        : 0;
-    check(
-      '录像尺寸与预览画布一致',
-      metadata.length > 2 && metadata[0] == '1280' && metadata[1] == '720',
-      '${probe.stdout}'.trim(),
-    );
-    check('录像时长与录制时间一致', duration >= 3 && duration <= 5.5, '$duration s');
+    for (final format in RecordFormat.values) {
+      final videoPath =
+          '${outDir.path}${Platform.pathSeparator}camera_test${format.ext}';
+      await backend.startRecord(videoPath, format.serverIndex);
+      await Future.delayed(const Duration(seconds: 4));
+      await backend.stopRecord();
+      check(
+        '摄像头 ${format.label} 已保存',
+        File(videoPath).existsSync() && File(videoPath).lengthSync() > 1000,
+      );
+      final probe = await Process.run('ffprobe', [
+        '-v',
+        'error',
+        '-select_streams',
+        'v:0',
+        '-show_entries',
+        'stream=width,height,codec_name:format=duration',
+        '-of',
+        'json',
+        videoPath,
+      ]);
+      final metadata = jsonDecode('${probe.stdout}') as Map;
+      final stream = (metadata['streams'] as List).single as Map;
+      final duration =
+          double.tryParse('${metadata['format']['duration']}') ?? 0;
+      final codec = switch (format) {
+        RecordFormat.mp4 => 'h264',
+        RecordFormat.wmv => 'wmv2',
+        RecordFormat.avi => 'mpeg4',
+      };
+      check(
+        '${format.label} 编码与格式一致',
+        probe.exitCode == 0 && stream['codec_name'] == codec,
+        '${stream['codec_name']}',
+      );
+      check(
+        '${format.label} 尺寸与预览画布一致',
+        stream['width'] == 1280 && stream['height'] == 720,
+      );
+      check(
+        '${format.label} 时长与录制时间一致',
+        duration >= 3 && duration <= 5.5,
+        '$duration s',
+      );
+    }
 
-    // 11. 关闭
+    // 11. 关闭重开不同画布与采集尺寸，确认真实预览与拍照恢复。
+    await backend.close();
+    final alternate = res.firstWhere(
+      (r) => r.width <= 1280,
+      orElse: () => res.first,
+    );
+    final ready = backend.frames.firstWhere(
+      (f) => f.width + f.x <= 640 && f.height + f.y <= 480,
+    );
+    await backend.open(
+      deviceIndex: dev.index,
+      canvasW: 640,
+      canvasH: 480,
+      captureW: alternate.width,
+      captureH: alternate.height,
+    );
+    final frame = await ready.timeout(const Duration(seconds: 10));
+    check(
+      '切换分辨率后预览恢复',
+      frame.rgb.length == frame.width * frame.height * 3,
+      alternate.label,
+    );
+    final switched = await backend.captureRaw(
+      savePath: '${outDir.path}${Platform.pathSeparator}after_switch.jpg',
+    );
+    final switchedImage = img.decodeImage(
+      await File(switched.savedPath).readAsBytes(),
+    );
+    check(
+      '切换后拍照使用新采集尺寸',
+      switchedImage?.width == alternate.width &&
+          switchedImage?.height == alternate.height,
+      '${switchedImage?.width}×${switchedImage?.height}',
+    );
+
+    // 12. 关闭
     await backend.close();
     await Future.delayed(const Duration(milliseconds: 500));
     check('关闭摄像头', !backend.isOpen);

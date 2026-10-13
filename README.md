@@ -1,4 +1,4 @@
-# 智能高拍仪 1.2（Windows / macOS）
+# 智能高拍仪 1.2.1（Windows / macOS）
 
 Flutter 桌面扫描客户端，参考科密高拍仪软件、SDK 示例和参数文档。Windows 通过本机 KMServer 接入扫描仪；macOS 通过 AVFoundation 接入 USB/UVC 摄像头。文档检测、透视裁切、曲线矫正、自动扫描、页面管理和导出采用共用代码。
 
@@ -6,7 +6,7 @@ Windows 已使用当前连接的 USB Camera 开发和实拍。macOS 原生接入
 
 ## 使用
 
-Windows 运行包：`build/SmartScanner-Windows-1.2.0.zip`。解压完整文件夹后运行 `smart_scanner.exe`，保留 DLL 和 data 目录。构建输出在 `build_temp/windows/x64/runner/Release`。
+Windows 运行包：`build/SmartScanner-Windows-1.2.1.zip`。解压完整文件夹后运行 `smart_scanner.exe`，保留 DLL 和 data 目录。构建输出在 `build_temp/windows/x64/runner/Release`。
 
 1. 启动厂商 KMServer，连接扫描仪，再打开程序。原装软件和本程序请分别运行，避免争用设备。
 2. 底部选择设备和分辨率，顶部设置裁切方式、输出效果、格式和文件名。
@@ -32,12 +32,14 @@ Windows 采集会切换至所选传感器尺寸，触发对焦并选择等待期
 ## 其他功能与限制
 
 - 文档扫描、旋转、设备参数、文档色彩处理、分页、命名避重、选页排序和本地 PDF 合并。
+- 批量导入遇到坏图会继续后续图片并报告失败文件；重复导入保留原有列表和识别结果。页序调整与 OCR 选页同步。
 - Windows 系统 OCR 和 macOS Vision OCR；Windows 需要安装对应 OCR 语言包。Word 按段落保存，Excel 每行文字一行，不恢复原稿表格或版式。
 - 证件正反面两次拍照合并；合同可叠加签名/印章图片，属于图像合成。
-- 摄像头和屏幕录像，MP4/WMV/AVI。已验收 Windows 摄像头 MP4；屏幕录制和其他组合仍需实机验收。
+- 摄像头和屏幕录像，MP4/WMV/AVI。已验收 Windows 摄像头三种格式；屏幕录制和 macOS 录像仍需实机验收。
 - 条码/二维码接口已接入，但尚未使用清晰实物条码完成识别验收；身份证信息读取需要专用读卡器。
 - 搜索文字 PDF、完整打印设置、手指消除、水印设置和原稿表格恢复尚未完成。
 - macOS 摄像头权限、原生编译、设备稳定性和全部处理流程需要 Mac 实机验收，不能以 Windows 测试代替。
+- Windows 部分窗口测试进程仍偶发异常退出；Ctrl+S 实机导出尚未通过，请使用“导出 PDF”按钮。
 
 详细验证结果和剩余项目见 [验证记录](docs/验证记录.md)。
 

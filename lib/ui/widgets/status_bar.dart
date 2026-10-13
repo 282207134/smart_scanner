@@ -108,7 +108,7 @@ class StatusBarWidget extends StatelessWidget {
               ),
             ),
           const Text(
-            'V1.2',
+            'V1.2.1',
             style: TextStyle(fontSize: 11, color: AppColors.textDim),
           ),
         ],

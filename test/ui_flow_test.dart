@@ -2,6 +2,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_scanner/backend/mock_backend.dart';
 import 'package:smart_scanner/core/models.dart';
@@ -11,13 +12,24 @@ import 'package:smart_scanner/theme.dart';
 import 'package:smart_scanner/ui/home_page.dart';
 import 'package:smart_scanner/ui/widgets/preview_view.dart';
 
-Future<AppController> pumpApp(WidgetTester tester) async {
+class ShortcutController extends AppController {
+  int exports = 0;
+  @override
+  Future<void> exportPdf({String? destination}) async {
+    exports++;
+  }
+}
+
+Future<AppController> pumpApp(
+  WidgetTester tester, {
+  AppController? controller,
+}) async {
   // Override logical layout bounds without repeatedly resizing the native
   // Windows flutter_tester render surface between tests.
   await tester.binding.setSurfaceSize(const Size(1600, 1000));
   addTearDown(() => tester.binding.setSurfaceSize(null));
 
-  final c = AppController();
+  final c = controller ?? AppController();
   await c.init(
     backendOverride: MockBackend(emitFrames: false),
     outputDirOverride: Directory.systemTemp.createTempSync('scanner_ui_').path,
@@ -51,6 +63,36 @@ Future<AppController> pumpApp(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('拍摄按钮处理时失去焦点后，Ctrl+S 仍可导出', (tester) async {
+    final controller = ShortcutController();
+    await pumpApp(tester, controller: controller);
+    Focus.of(tester.element(find.text('拍摄'))).requestFocus();
+    await tester.pump();
+    controller.capturing = true;
+    controller.notifyListeners();
+    await tester.pump();
+    controller.capturing = false;
+    controller.notifyListeners();
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(controller.exports, 1);
+  });
+  testWidgets('编辑前缀后切换 OCR，Ctrl+S 仍触发 PDF 导出快捷键', (tester) async {
+    final controller = ShortcutController();
+    await pumpApp(tester, controller: controller);
+    await tester.tap(find.byType(TextField).first);
+    await tester.enterText(find.byType(TextField).first, 'Test_');
+    await tester.tap(find.text('OCR').first);
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(controller.exports, 1);
+  });
   testWidgets('大幅拖动手动裁切角点和书脊保持原来的拖动目标', (tester) async {
     final c = await pumpApp(tester);
     c.setCutMode(CutMode.manual);

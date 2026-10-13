@@ -122,8 +122,9 @@ void main() {
     final backend = SwitchingBackend();
     final other = AppController();
     await other.init(backendOverride: backend, outputDirOverride: c.outputDir);
+    await other.refreshResolutions();
     other.connected = other.previewOpen = true;
-    other.resolution = const ScanResolution(640, 480);
+    other.resolution = const ScanResolution(1920, 1080);
     final switching = other.selectResolution(const ScanResolution(1280, 720));
     try {
       expect(other.canCapture, isFalse);

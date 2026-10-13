@@ -109,6 +109,8 @@ class AppController extends ChangeNotifier {
       ? pages[selectedPage]
       : null;
   (int, int) get canvasSize => (canvasW, canvasH);
+  bool supportsResolution(ScanResolution size) =>
+      resolutions.any((r) => r.width == size.width && r.height == size.height);
   List<OutputFormat> get availableFormats => switch (mode) {
     ScanMode.ocr => [OutputFormat.txt, OutputFormat.word, OutputFormat.excel],
     ScanMode.idCard => [OutputFormat.jpg, OutputFormat.png],
@@ -242,11 +244,14 @@ class AppController extends ChangeNotifier {
 
   Future<void> refreshResolutions() async {
     final previous = resolution;
-    resolutions = (await backend.listResolutions(deviceIndex))
-        .fold<List<ScanResolution>>([], (list, r) {
-          if (!list.any((e) => e.label == r.label)) list.add(r);
-          return list;
-        });
+    resolutions =
+        {for (final r in await backend.listResolutions(deviceIndex)) r.label: r}
+            .values
+            .toList()
+          ..sort((a, b) {
+            final pixels = (b.width * b.height).compareTo(a.width * a.height);
+            return pixels != 0 ? pixels : b.width.compareTo(a.width);
+          });
     if (resolutions.isEmpty) {
       resolution = null;
       return;
@@ -284,6 +289,10 @@ class AppController extends ChangeNotifier {
 
   Future<void> selectResolution(ScanResolution r) async {
     if (busy || connecting || recording || autoScan) return;
+    if (!supportsResolution(r)) {
+      _error('当前设备不支持 ${r.label}');
+      return;
+    }
     _resetGeometry();
     resolution = r;
     await reopenPreview();

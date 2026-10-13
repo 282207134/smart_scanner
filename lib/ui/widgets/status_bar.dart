@@ -73,6 +73,7 @@ class StatusBarWidget extends StatelessWidget {
                   value: r.label,
                   child: Text(
                     r.label,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 12, color: AppColors.text),
                   ),
                 ),

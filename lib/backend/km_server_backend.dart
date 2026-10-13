@@ -355,6 +355,12 @@ class KmServerBackend implements ScannerBackend {
   @override
   void bestSize() => _simple(KmCmd.bestSize);
   @override
+  void setPreviewSize(bool maximized) {
+    bestSize();
+    if (!maximized) zoomOut();
+  }
+
+  @override
   void trueSize() => _simple(KmCmd.trueSize);
   @override
   void rotateLeft() {

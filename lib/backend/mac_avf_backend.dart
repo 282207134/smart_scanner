@@ -146,6 +146,8 @@ class MacAvfBackend implements ScannerBackend {
   @override
   void bestSize() => _set('zoom', 1.0);
   @override
+  void setPreviewSize(bool maximized) => _set('previewSize', maximized);
+  @override
   void trueSize() => _set('trueSize', true);
   @override
   void rotateLeft() => _set('rotateDelta', -1);

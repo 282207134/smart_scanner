@@ -49,6 +49,9 @@ abstract class ScannerBackend {
   void zoomIn();
   void zoomOut();
   void bestSize();
+
+  /// Display a compact preview or fill the canvas height, without changing capture size.
+  void setPreviewSize(bool maximized);
   void trueSize();
   void rotateLeft();
   void rotateRight();

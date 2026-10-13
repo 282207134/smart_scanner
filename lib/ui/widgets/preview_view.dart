@@ -11,6 +11,7 @@ import '../../core/document_geometry.dart';
 import '../../core/auto_scan_detector.dart';
 import '../../state/app_controller.dart';
 import '../../theme.dart';
+import 'preview_grid.dart';
 
 /// 预览区：帧渲染 + 叠加层（裁剪框/书脊线）+ 交互（滚轮缩放、拖拽平移/框选）
 class PreviewView extends StatefulWidget {
@@ -36,48 +37,50 @@ class _PreviewViewState extends State<PreviewView> {
   Widget build(BuildContext context) {
     if (c.mode == ScanMode.ocr) {
       final page = c.currentPage;
-      return Container(
-        color: AppColors.previewBg,
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: page == null
-                  ? const Center(
-                      child: Text(
-                        '导入图片，或选择右侧已扫描页面',
-                        style: TextStyle(color: AppColors.textDim),
+      return CustomPaint(
+        painter: const PreviewGridPainter(),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: page == null
+                    ? const Center(
+                        child: Text(
+                          '导入图片，或选择右侧已扫描页面',
+                          style: TextStyle(color: AppColors.textDim),
+                        ),
+                      )
+                    : InteractiveViewer(
+                        maxScale: 6,
+                        child: Image.file(
+                          File(page.sourcePath),
+                          fit: BoxFit.contain,
+                        ),
                       ),
-                    )
-                  : InteractiveViewer(
-                      maxScale: 6,
-                      child: Image.file(
-                        File(page.sourcePath),
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              '识别结果',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 150,
-              child: SingleChildScrollView(
-                child: SelectableText(
-                  c.ocrStatus.isNotEmpty
-                      ? c.ocrStatus
-                      : c.lastOcrText.isEmpty
-                      ? '选择识别语言后点击“识别文字”'
-                      : c.lastOcrText,
-                  style: const TextStyle(fontSize: 13, height: 1.6),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '识别结果',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 150,
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    c.ocrStatus.isNotEmpty
+                        ? c.ocrStatus
+                        : c.lastOcrText.isEmpty
+                        ? '选择识别语言后点击“识别文字”'
+                        : c.lastOcrText,
+                    style: const TextStyle(fontSize: 13, height: 1.6),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     }
@@ -130,12 +133,6 @@ class _PreviewViewState extends State<PreviewView> {
                 c.resetManualRegion();
                 c.fitToWindow();
               },
-              onScaleStart: (d) {
-                if (c.busy || c.recording || c.autoScan) return;
-                // Scale recognition starts after the pointer has moved. Keep
-                // the target hit at pointer down, even for a large first move.
-                if (_dragStart == null) _beginDrag(d.localFocalPoint);
-              },
               onScaleUpdate: (d) {
                 if (c.busy || c.recording || c.autoScan) return;
                 if (c.cutMode == CutMode.manual && _dragStart != null) {
@@ -167,9 +164,7 @@ class _PreviewViewState extends State<PreviewView> {
                     (d.localFocalPoint.dx - _contentFit.left) /
                         _contentFit.width,
                   );
-                } else if (c.cutMode == CutMode.none &&
-                    c.mode != ScanMode.book &&
-                    d.pointerCount == 1 &&
+                } else if (d.pointerCount == 1 &&
                     _dragStart != null &&
                     d.scale == 1.0) {
                   final delta = d.localFocalPoint - _dragStart!;
@@ -188,6 +183,7 @@ class _PreviewViewState extends State<PreviewView> {
                 _dragSeam = false;
               },
               child: Stack(
+                clipBehavior: Clip.hardEdge,
                 children: [
                   CustomPaint(
                     painter: _PreviewPainter(
@@ -301,6 +297,10 @@ class _PreviewViewState extends State<PreviewView> {
         }
       }
     }
+    if (_dragCorner == null && !_contentFit.contains(point)) {
+      _dragStart = null;
+      return;
+    }
     _dragSeam =
         c.mode == ScanMode.book &&
         (point.dx - (_contentFit.left + c.bookSeam * _contentFit.width)).abs() <
@@ -391,21 +391,27 @@ class _PreviewPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final grid = Paint()
-      ..color = AppColors.divider.withValues(alpha: .18)
-      ..strokeWidth = 1;
-    for (double x = 0; x < size.width; x += 36) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
-    }
-    for (double y = 0; y < size.height; y += 36) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
-    }
+    const PreviewGridPainter().paint(canvas, size);
     if (image != null) {
+      // Frames contain opaque black letterboxing. Leave that area on the grid.
+      final source = Rect.fromLTWH(
+        (contentRect.left - fitRect.left) / fitRect.width * image!.width,
+        (contentRect.top - fitRect.top) / fitRect.height * image!.height,
+        contentRect.width / fitRect.width * image!.width,
+        contentRect.height / fitRect.height * image!.height,
+      );
       canvas.drawImageRect(
         image!,
-        Rect.fromLTWH(0, 0, image!.width.toDouble(), image!.height.toDouble()),
-        fitRect,
+        source,
+        contentRect,
         Paint()..filterQuality = FilterQuality.medium,
+      );
+      canvas.drawRect(
+        contentRect.deflate(.5),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = AppColors.textDim.withValues(alpha: .6),
       );
     } else {
       _placeholder(canvas, size);

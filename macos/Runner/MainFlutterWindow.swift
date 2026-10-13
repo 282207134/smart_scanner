@@ -21,6 +21,22 @@ class MainFlutterWindow: NSWindow {
   }
 }
 
+enum PreviewBounds {
+  static func scale(image: CGSize, canvas: CGSize, maximized: Bool) -> CGFloat {
+    let heightScale = canvas.height / image.height
+    return maximized ? heightScale : min(canvas.width / image.width, heightScale) * 0.85
+  }
+
+  static func clampPan(_ pan: CGPoint, image: CGSize, canvas: CGSize) -> CGPoint {
+    // Small images stay inside the canvas; enlarged images keep it covered.
+    let limitX = abs(canvas.width - image.width) / 2
+    let limitY = abs(canvas.height - image.height) / 2
+    return CGPoint(x: min(limitX, max(-limitX, pan.x)), y: min(limitY, max(-limitY, pan.y)))
+  }
+}
+
+private enum PreviewSize { case compact, maximized, manual }
+
 final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOutputSampleBufferDelegate {
   private let session = AVCaptureSession()
   private let queue = DispatchQueue(label: "smart_scanner.camera")
@@ -32,6 +48,7 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
   private var rotation = 0, colorMode = 0, cutMode = 0
   private var cutRect: CGRect?
   private var zoom: CGFloat = 1, pan = CGPoint.zero
+  private var previewSize = PreviewSize.compact
   private var lastFrameTime = CFAbsoluteTimeGetCurrent()
   private var removeBg = false, smartEdge = false
   private var folderAccess: URL?
@@ -166,9 +183,15 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
           case "colorMode": self.colorMode = value as? Int ?? 0
           case "cutMode": self.cutMode = value as? Int ?? 0
           case "cutRect": if let rect = value as? [Int], rect.count == 4 { self.cutRect = CGRect(x: CGFloat(rect[0]), y: CGFloat(rect[1]), width: CGFloat(rect[2]), height: CGFloat(rect[3])) }
-          case "zoom": self.zoom = CGFloat(value as? Double ?? 1); self.pan = .zero
-          case "zoomDelta": self.zoom = min(5, max(1, self.zoom + CGFloat(value as? Double ?? 0)))
-          case "trueSize": if let image = self.latest { self.zoom = max(1, image.extent.width / CGFloat(self.canvasW)) }
+          case "previewSize": self.previewSize = value as? Bool == true ? .maximized : .compact; self.pan = .zero
+          case "zoom": self.previewSize = .manual; self.zoom = CGFloat(value as? Double ?? 1); self.pan = .zero
+          case "zoomDelta": self.previewSize = .manual; self.zoom = min(5, max(0.2, self.zoom + CGFloat(value as? Double ?? 0)))
+          case "trueSize": if let image = self.latest {
+            self.previewSize = .manual
+            let size = image.oriented(forExifOrientation: [1, 6, 3, 8][self.rotation % 4]).extent.size
+            let fitScale = min(CGFloat(self.canvasW) / size.width, CGFloat(self.canvasH) / size.height)
+            self.zoom = 1 / fitScale
+          }
           case "pan": if let values = value as? [Int], values.count == 2 { self.pan.x += CGFloat(values[0]); self.pan.y -= CGFloat(values[1]) }
           case "removeBg": self.removeBg = value as? Bool ?? false
           case "smartEdge": self.smartEdge = value as? Bool ?? false
@@ -231,7 +254,13 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
     guard now - lastFrameTime > 1.0 / 12.0, let raw = latest else { return }; lastFrameTime = now
     do {
       let image = try process(raw, capture: false)
-      let scale = min(CGFloat(canvasW) / image.extent.width, CGFloat(canvasH) / image.extent.height) * zoom
+      let canvasSize = CGSize(width: CGFloat(canvasW), height: CGFloat(canvasH))
+      let fitScale = min(canvasSize.width / image.extent.width, canvasSize.height / image.extent.height)
+      if previewSize != .manual {
+        zoom = PreviewBounds.scale(image: image.extent.size, canvas: canvasSize, maximized: previewSize == .maximized) / fitScale
+      }
+      let scale = fitScale * zoom
+      pan = PreviewBounds.clampPan(pan, image: CGSize(width: image.extent.width * scale, height: image.extent.height * scale), canvas: canvasSize)
       let transformed = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY)).transformed(by: CGAffineTransform(scaleX: scale, y: scale)).transformed(by: CGAffineTransform(translationX: (CGFloat(canvasW) - image.extent.width * scale) / 2 + pan.x, y: (CGFloat(canvasH) - image.extent.height * scale) / 2 + pan.y))
       let canvas = CGRect(x: 0, y: 0, width: CGFloat(canvasW), height: CGFloat(canvasH))
       let area = transformed.extent.integral.intersection(canvas)

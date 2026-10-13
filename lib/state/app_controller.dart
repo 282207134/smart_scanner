@@ -403,10 +403,6 @@ class AppController extends ChangeNotifier {
     final buf = _canvasRgb ??= Uint8List(canvasW * canvasH * 3);
     if (buf.length != canvasW * canvasH * 3) return;
     buf.fillRange(0, buf.length, 0);
-    previewImageX = f.x / canvasW;
-    previewImageY = f.y / canvasH;
-    previewImageWidth = f.width / canvasW;
-    previewImageHeight = f.height / canvasH;
     if (!busy && !recording) {
       if (autoScan) _feedAuto(f);
       if (cutMode != CutMode.none ||
@@ -420,7 +416,7 @@ class AppController extends ChangeNotifier {
       final dst = ((f.y + row) * canvasW + f.x) * 3;
       buf.setRange(dst, dst + f.width * 3, f.rgb, row * f.width * 3);
     }
-    unawaited(_convertToImage(buf, canvasW, canvasH));
+    unawaited(_convertToImage(buf, canvasW, canvasH, f));
   }
 
   Future<void> _detectDocuments(PreviewFrame f) async {
@@ -469,7 +465,12 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> _convertToImage(Uint8List rgb, int w, int h) async {
+  Future<void> _convertToImage(
+    Uint8List rgb,
+    int w,
+    int h,
+    PreviewFrame geometry,
+  ) async {
     if (_converting || _disposed) return;
     _converting = true;
     ui.ImmutableBuffer? buffer;
@@ -498,6 +499,11 @@ class AppController extends ChangeNotifier {
       }
       final old = previewImage;
       previewImage = frame.image;
+      // Commit the pixels and their area together, including when frames drop.
+      previewImageX = geometry.x / w;
+      previewImageY = geometry.y / h;
+      previewImageWidth = geometry.width / w;
+      previewImageHeight = geometry.height / h;
       if (old != null) Timer(const Duration(milliseconds: 120), old.dispose);
       _fpsCount++;
       if (_fpsClock.elapsedMilliseconds >= 2000) {
@@ -1318,7 +1324,7 @@ class AppController extends ChangeNotifier {
   }
 
   void _view(void Function(ScannerBackend) action) {
-    if (!connected || !previewOpen || busy || recording || autoScan) return;
+    if (!canCapture) return;
     try {
       action(backend);
     } catch (e) {
@@ -1338,24 +1344,23 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  void fitToWindow() => _view((b) => b.bestSize());
+  void fitToWindow() => _view((b) => b.setPreviewSize(false));
+  void maximizePreview() => _view((b) => b.setPreviewSize(true));
   void trueSize() {
     if (cutMode == CutMode.none && mode != ScanMode.book) {
       _view((b) => b.trueSize());
     }
   }
 
-  void rotateLeft() {
-    if (!connected || !previewOpen || busy || recording || autoScan) return;
+  void rotateLeft() => _view((b) {
     _resetGeometry();
-    _view((b) => b.rotateLeft());
-  }
+    b.rotateLeft();
+  });
 
-  void rotateRight() {
-    if (!connected || !previewOpen || busy || recording || autoScan) return;
+  void rotateRight() => _view((b) {
     _resetGeometry();
-    _view((b) => b.rotateRight());
-  }
+    b.rotateRight();
+  });
 
   void _resetGeometry() {
     _visionGeneration++;

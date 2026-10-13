@@ -219,6 +219,8 @@ class MockBackend implements ScannerBackend {
   @override
   void bestSize() {}
   @override
+  void setPreviewSize(bool maximized) {}
+  @override
   void trueSize() {}
   @override
   void rotateLeft() {}

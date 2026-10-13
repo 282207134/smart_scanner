@@ -23,13 +23,6 @@ class LeftToolbar extends StatelessWidget {
             _btn(Icons.zoom_in, '放大', c.zoomIn),
             _btn(Icons.zoom_out, '缩小', c.zoomOut),
             _btn(Icons.filter_1, '1:1 实际大小', c.trueSize),
-            _btn(Icons.fit_screen, '适合窗口', c.fitToWindow),
-            _btn(
-              Icons.center_focus_strong,
-              c.focusing ? '正在重新对焦…' : '手动对焦',
-              c.canCapture ? c.manualFocus : null,
-              active: c.focusing,
-            ),
             const Divider(color: AppColors.divider, height: 16),
             _btn(
               Icons.auto_mode,
@@ -39,6 +32,23 @@ class LeftToolbar extends StatelessWidget {
             ),
             _btn(Icons.picture_as_pdf, '导出PDF', () => c.exportPdf()),
             _btn(Icons.refresh, '刷新设备', () => c.refreshDevices()),
+            const Divider(color: AppColors.divider, height: 16),
+            _btn(
+              Icons.zoom_in_map,
+              '缩小化视频区域',
+              c.canCapture ? c.fitToWindow : null,
+            ),
+            _btn(
+              Icons.center_focus_strong,
+              c.focusing ? '正在重新对焦…' : '手动对焦',
+              c.canCapture ? c.manualFocus : null,
+              active: c.focusing,
+            ),
+            _btn(
+              Icons.zoom_out_map,
+              '最大化视频区域',
+              c.canCapture ? c.maximizePreview : null,
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -58,6 +68,7 @@ class LeftToolbar extends StatelessWidget {
         icon: Icon(
           icon,
           size: 20,
+          semanticLabel: tooltip,
           color: active ? AppColors.accent : AppColors.textDim,
         ),
         onPressed: onTap,

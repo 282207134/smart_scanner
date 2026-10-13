@@ -1,10 +1,14 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/models.dart';
+import '../../core/document_geometry.dart';
+import '../../core/auto_scan_detector.dart';
 import '../../state/app_controller.dart';
 import '../../theme.dart';
 
@@ -22,10 +26,61 @@ class _PreviewViewState extends State<PreviewView> {
 
   // 手动裁剪矩形（画布坐标）
   Offset? _dragStart;
-  Rect? _cutRect;
+  int? _dragCorner;
+  bool _dragSeam = false;
+  Rect _currentFit = Rect.zero;
+  Rect _contentFit = Rect.zero;
+  Size _previewSize = Size.zero;
 
   @override
   Widget build(BuildContext context) {
+    if (c.mode == ScanMode.ocr) {
+      final page = c.currentPage;
+      return Container(
+        color: AppColors.previewBg,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: page == null
+                  ? const Center(
+                      child: Text(
+                        '导入图片，或选择右侧已扫描页面',
+                        style: TextStyle(color: AppColors.textDim),
+                      ),
+                    )
+                  : InteractiveViewer(
+                      maxScale: 6,
+                      child: Image.file(
+                        File(page.sourcePath),
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '识别结果',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 150,
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  c.ocrStatus.isNotEmpty
+                      ? c.ocrStatus
+                      : c.lastOcrText.isEmpty
+                      ? '选择识别语言后点击“识别文字”'
+                      : c.lastOcrText,
+                  style: const TextStyle(fontSize: 13, height: 1.6),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       color: AppColors.previewBg,
       padding: const EdgeInsets.all(16),
@@ -33,8 +88,10 @@ class _PreviewViewState extends State<PreviewView> {
         builder: (context, constraints) {
           final w = constraints.maxWidth;
           final h = constraints.maxHeight;
+          _previewSize = Size(w, h);
           // 画布尺寸请求（带迟滞）
           WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
             if (w.isFinite && h.isFinite) {
               c.setCanvasSize(w.round(), h.round());
             }
@@ -42,8 +99,16 @@ class _PreviewViewState extends State<PreviewView> {
 
           final img = c.previewImage;
           final fit = _fitRect(img?.width ?? 0, img?.height ?? 0, w, h);
+          _currentFit = fit;
+          _contentFit = Rect.fromLTWH(
+            fit.left + c.previewImageX * fit.width,
+            fit.top + c.previewImageY * fit.height,
+            c.previewImageWidth * fit.width,
+            c.previewImageHeight * fit.height,
+          );
 
           return Listener(
+            onPointerDown: (event) => _beginDrag(event.localPosition),
             onPointerSignal: (signal) {
               if (signal is PointerScrollEvent) {
                 if (signal.scrollDelta.dy < 0) {
@@ -56,23 +121,49 @@ class _PreviewViewState extends State<PreviewView> {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onDoubleTap: () {
-                setState(() => _cutRect = null);
+                c.resetManualRegion();
                 c.fitToWindow();
               },
               onScaleStart: (d) {
-                _dragStart = d.localFocalPoint;
+                if (c.busy || c.recording || c.autoScan) return;
+                // Scale recognition starts after the pointer has moved. Keep
+                // the target hit at pointer down, even for a large first move.
+                if (_dragStart == null) _beginDrag(d.localFocalPoint);
               },
               onScaleUpdate: (d) {
+                if (c.busy || c.recording || c.autoScan) return;
                 if (c.cutMode == CutMode.manual && _dragStart != null) {
+                  if (_dragCorner != null) {
+                    c.setManualCorner(
+                      _dragCorner!,
+                      ScanPoint(
+                        (d.localFocalPoint.dx - _contentFit.left) /
+                            _contentFit.width,
+                        (d.localFocalPoint.dy - _contentFit.top) /
+                            _contentFit.height,
+                      ),
+                    );
+                    return;
+                  }
                   final a = _toCanvas(_dragStart!);
                   final b = _toCanvas(d.localFocalPoint);
-                  setState(() {
-                    _cutRect = Rect.fromPoints(a, b);
-                  });
-                  final rect = _normalized(_cutRect!);
-                  c.backend.setCutRect(rect.left.round(), rect.top.round(),
-                      rect.width.round(), rect.height.round());
-                } else if (d.pointerCount == 1 &&
+                  final rect = _normalized(Rect.fromPoints(a, b));
+                  if (rect.width > 2 && rect.height > 2) {
+                    c.setCutRect(
+                      rect.left.round(),
+                      rect.top.round(),
+                      rect.width.round(),
+                      rect.height.round(),
+                    );
+                  }
+                } else if (_dragSeam) {
+                  c.setBookSeam(
+                    (d.localFocalPoint.dx - _contentFit.left) /
+                        _contentFit.width,
+                  );
+                } else if (c.cutMode == CutMode.none &&
+                    c.mode != ScanMode.book &&
+                    d.pointerCount == 1 &&
                     _dragStart != null &&
                     d.scale == 1.0) {
                   final delta = d.localFocalPoint - _dragStart!;
@@ -82,19 +173,98 @@ class _PreviewViewState extends State<PreviewView> {
                   }
                 }
               },
-              onScaleEnd: (_) => _dragStart = null,
-              child: CustomPaint(
-                painter: _PreviewPainter(
-                  image: img,
-                  fitRect: fit,
-                  mode: c.mode,
-                  cutMode: c.cutMode,
-                  cutRect: _cutRect,
-                  connected: c.connected,
-                  previewOpen: c.previewOpen,
-                  statusMessage: c.statusMessage,
-                ),
-                size: Size(w, h),
+              onScaleEnd: (_) {
+                _dragStart = null;
+                _dragCorner = null;
+                _dragSeam = false;
+              },
+              child: Stack(
+                children: [
+                  CustomPaint(
+                    painter: _PreviewPainter(
+                      image: img,
+                      fitRect: fit,
+                      mode: c.mode,
+                      cutMode: c.cutMode,
+                      contentRect: _contentFit,
+                      regions: c.detectedDocuments,
+                      manual: c.manualRegion,
+                      seam: c.bookSeam,
+                      connected: c.connected,
+                      previewOpen: c.previewOpen,
+                      statusMessage: c.statusMessage,
+                    ),
+                    size: Size(w, h),
+                  ),
+                  if (c.mode == ScanMode.contract && c.signatureBytes != null)
+                    _mark(c.signatureBytes!, c.markCorner, _contentFit),
+                  if (c.mode == ScanMode.contract && c.stampBytes != null)
+                    _mark(
+                      c.stampBytes!,
+                      c.markCorner == 3 ? 2 : 3,
+                      _contentFit,
+                    ),
+                  if (c.previewOpen && !c.busy && c.cutMode == CutMode.manual)
+                    _hint('拖动四个角点贴合文件边缘；拖出新区域可重新框选'),
+                  if (c.previewOpen && !c.busy && c.mode == ScanMode.book)
+                    _hint('拖动中间虚线对齐书脊；书页四周需要留出背景'),
+                  if (c.previewOpen &&
+                      !c.busy &&
+                      (c.cutMode == CutMode.auto ||
+                          c.cutMode == CutMode.multiImg))
+                    _hint(
+                      c.detectedDocuments.isEmpty
+                          ? '正在寻找文件边界 · 请留出四周边缘'
+                          : c.cutMode == CutMode.multiImg
+                          ? '识别到 ${c.detectedDocuments.length} 个文档 · 将分别保存'
+                          : '已检测到文件边界',
+                    ),
+                  if (c.autoScan)
+                    Center(
+                      child: IgnorePointer(
+                        child: Container(
+                          key: const Key('auto-countdown'),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 30,
+                            vertical: 20,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: .55),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (c.autoProgress.phase ==
+                                  AutoScanPhase.countdown)
+                                Text(
+                                  '${c.autoProgress.seconds}',
+                                  style: const TextStyle(
+                                    fontSize: 64,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              Text(
+                                c.capturing
+                                    ? '正在扫描…'
+                                    : switch (c.autoProgress.phase) {
+                                        AutoScanPhase.countdown => '画面已稳定，即将拍摄',
+                                        AutoScanPhase.captured => '本页已扫描，请更换文档',
+                                        AutoScanPhase.moving => '等待画面停止变化…',
+                                        _ => '等待文件和稳定画面…',
+                                      },
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           );
@@ -102,6 +272,46 @@ class _PreviewViewState extends State<PreviewView> {
       ),
     );
   }
+
+  void _beginDrag(Offset point) {
+    _dragStart = null;
+    _dragCorner = null;
+    _dragSeam = false;
+    if (c.busy || c.recording || c.autoScan || _contentFit.isEmpty) return;
+    _dragStart = point;
+    if (c.cutMode == CutMode.manual && c.manualRegion != null) {
+      for (var i = 0; i < 4; i++) {
+        final p = c.manualRegion!.corners[i];
+        final handle = Offset(
+          _contentFit.left + p.x * _contentFit.width,
+          _contentFit.top + p.y * _contentFit.height,
+        );
+        if ((point - handle).distance < 28) {
+          _dragCorner = i;
+          break;
+        }
+      }
+    }
+    _dragSeam =
+        c.mode == ScanMode.book &&
+        (point.dx - (_contentFit.left + c.bookSeam * _contentFit.width)).abs() <
+            28;
+  }
+
+  Widget _hint(String text) => Positioned(
+    left: 10,
+    top: 10,
+    child: IgnorePointer(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        color: Colors.black.withValues(alpha: .6),
+        child: Text(
+          text,
+          style: const TextStyle(color: Colors.white, fontSize: 12),
+        ),
+      ),
+    ),
+  );
 
   Rect _fitRect(int iw, int ih, double w, double h) {
     if (iw <= 0 || ih <= 0) {
@@ -114,18 +324,33 @@ class _PreviewViewState extends State<PreviewView> {
 
   /// 屏幕坐标 → 画布坐标
   Offset _toCanvas(Offset screen) {
-    final box = context.findRenderObject() as RenderBox?;
-    final size = box?.size ?? Size.zero;
-    final fit = _fitRect(c.previewImage?.width ?? 0, c.previewImage?.height ?? 0,
-        size.width, size.height);
+    final fit = _currentFit;
+    if (fit.isEmpty) return Offset.zero;
     final fx = (screen.dx - fit.left) / fit.width;
     final fy = (screen.dy - fit.top) / fit.height;
-    return Offset(fx * c.canvasW, fy * c.canvasH);
+    return Offset(
+      (fx * c.canvasW).clamp(0, c.canvasW.toDouble()),
+      (fy * c.canvasH).clamp(0, c.canvasH.toDouble()),
+    );
   }
 
+  Widget _mark(Uint8List bytes, int corner, Rect fit) => Positioned(
+    left: corner == 0 || corner == 2 ? fit.left + fit.width * .03 : null,
+    right: corner == 1 || corner == 3
+        ? _previewSize.width - fit.right + fit.width * .03
+        : null,
+    top: corner < 2 ? fit.top + fit.height * .03 : null,
+    bottom: corner >= 2
+        ? _previewSize.height - fit.bottom + fit.height * .03
+        : null,
+    width: fit.width * c.markSize,
+    child: IgnorePointer(child: Image.memory(bytes, fit: BoxFit.contain)),
+  );
+
   Rect _normalized(Rect r) => Rect.fromPoints(
-      Offset(math.min(r.left, r.right), math.min(r.top, r.bottom)),
-      Offset(math.max(r.left, r.right), math.max(r.top, r.bottom)));
+    Offset(math.min(r.left, r.right), math.min(r.top, r.bottom)),
+    Offset(math.max(r.left, r.right), math.max(r.top, r.bottom)),
+  );
 }
 
 class _PreviewPainter extends CustomPainter {
@@ -133,7 +358,10 @@ class _PreviewPainter extends CustomPainter {
   final Rect fitRect;
   final ScanMode mode;
   final CutMode cutMode;
-  final Rect? cutRect;
+  final Rect contentRect;
+  final List<DocumentRegion> regions;
+  final DocumentRegion? manual;
+  final double seam;
   final bool connected;
   final bool previewOpen;
   final String statusMessage;
@@ -143,7 +371,10 @@ class _PreviewPainter extends CustomPainter {
     required this.fitRect,
     required this.mode,
     required this.cutMode,
-    required this.cutRect,
+    required this.contentRect,
+    required this.regions,
+    required this.manual,
+    required this.seam,
     required this.connected,
     required this.previewOpen,
     required this.statusMessage,
@@ -151,6 +382,15 @@ class _PreviewPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final grid = Paint()
+      ..color = AppColors.divider.withValues(alpha: .18)
+      ..strokeWidth = 1;
+    for (double x = 0; x < size.width; x += 36) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
+    }
+    for (double y = 0; y < size.height; y += 36) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+    }
     if (image != null) {
       canvas.drawImageRect(
         image!,
@@ -174,60 +414,159 @@ class _PreviewPainter extends CustomPainter {
       case ScanMode.ocr:
       case ScanMode.video:
       case ScanMode.contract:
-        canvas.drawRect(fitRect, borderPaint);
+        if (cutMode == CutMode.auto || cutMode == CutMode.multiImg) {
+          final shown = cutMode == CutMode.multiImg
+              ? regions
+              : regions.isEmpty
+              ? <DocumentRegion>[]
+              : [regions.reduce((a, b) => a.area > b.area ? a : b)];
+          for (var i = 0; i < shown.length; i++) {
+            _region(
+              canvas,
+              shown[i],
+              borderPaint,
+              label: cutMode == CutMode.multiImg ? '${i + 1}' : null,
+            );
+          }
+        }
       case ScanMode.book:
-        canvas.drawRect(fitRect, borderPaint);
+        for (final region in regions) {
+          _region(canvas, region, borderPaint);
+        }
         // 书脊中缝虚线
-        final mid = fitRect.center.dx;
+        final mid = contentRect.left + contentRect.width * seam;
         final dash = Paint()
           ..strokeWidth = 2
           ..color = AppColors.guide;
-        _dashedVertical(canvas, mid, fitRect.top, fitRect.bottom, dash);
+        _dashedVertical(canvas, mid, contentRect.top, contentRect.bottom, dash);
+        canvas.drawCircle(
+          Offset(mid, contentRect.center.dy),
+          9,
+          Paint()..color = AppColors.accent,
+        );
       case ScanMode.idCard:
-        canvas.drawRect(fitRect, borderPaint);
+        for (final region in regions) {
+          _region(canvas, region, borderPaint);
+        }
         // 上下两块证件区域参考框
         final h = fitRect.height;
-        final r1 = Rect.fromLTWH(fitRect.left + fitRect.width * 0.08,
-            fitRect.top + h * 0.12, fitRect.width * 0.84, h * 0.3);
-        final r2 = Rect.fromLTWH(fitRect.left + fitRect.width * 0.08,
-            fitRect.top + h * 0.56, fitRect.width * 0.84, h * 0.3);
+        final r1 = Rect.fromLTWH(
+          fitRect.left + fitRect.width * 0.08,
+          fitRect.top + h * 0.12,
+          fitRect.width * 0.84,
+          h * 0.3,
+        );
+        final r2 = Rect.fromLTWH(
+          fitRect.left + fitRect.width * 0.08,
+          fitRect.top + h * 0.56,
+          fitRect.width * 0.84,
+          h * 0.3,
+        );
         final guide = Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5
           ..color = AppColors.guide.withValues(alpha: 0.7);
         canvas.drawRRect(
-            RRect.fromRectAndRadius(r1, const Radius.circular(8)), guide);
+          RRect.fromRectAndRadius(r1, const Radius.circular(8)),
+          guide,
+        );
         canvas.drawRRect(
-            RRect.fromRectAndRadius(r2, const Radius.circular(8)), guide);
+          RRect.fromRectAndRadius(r2, const Radius.circular(8)),
+          guide,
+        );
     }
 
     // 手动裁剪矩形
-    if (cutMode == CutMode.manual && cutRect != null && image != null) {
-      final iw = image!.width.toDouble(), ih = image!.height.toDouble();
-      final r = cutRect!;
-      final sx = fitRect.width / iw, sy = fitRect.height / ih;
-      final screen = Rect.fromLTWH(
-        fitRect.left + math.min(r.left, r.right) * sx,
-        fitRect.top + math.min(r.top, r.bottom) * sy,
-        r.width * sx,
-        r.height * sy,
+    if (cutMode == CutMode.manual && manual != null && image != null) {
+      final path = _path(manual!);
+      canvas.drawPath(
+        Path()
+          ..fillType = PathFillType.evenOdd
+          ..addRect(contentRect)
+          ..addPath(path, Offset.zero),
+        Paint()..color = Colors.black.withValues(alpha: .38),
       );
+      _region(
+        canvas,
+        manual!,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..color = AppColors.accent,
+      );
+      for (final p in manual!.corners) {
+        final point = Offset(
+          contentRect.left + p.x * contentRect.width,
+          contentRect.top + p.y * contentRect.height,
+        );
+        canvas.drawCircle(point, 8, Paint()..color = AppColors.accent);
+        canvas.drawCircle(point, 4, Paint()..color = Colors.white);
+      }
+    }
+  }
+
+  Path _path(DocumentRegion region) {
+    final path = Path();
+    for (var i = 0; i < 4; i++) {
+      final p = region.corners[i],
+          x = contentRect.left + p.x * contentRect.width,
+          y = contentRect.top + p.y * contentRect.height;
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    return path..close();
+  }
+
+  void _region(
+    Canvas canvas,
+    DocumentRegion region,
+    Paint paint, {
+    String? label,
+  }) {
+    canvas.drawPath(_path(region), paint);
+    if (label != null) {
+      final p = region.corners.first;
+      final offset = Offset(
+        contentRect.left + p.x * contentRect.width,
+        contentRect.top + p.y * contentRect.height,
+      );
+      final tp = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: const TextStyle(
+            color: Colors.black,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
       canvas.drawRect(
-          screen,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2
-            ..color = AppColors.accent);
+        Rect.fromLTWH(offset.dx, offset.dy, tp.width + 14, tp.height + 8),
+        Paint()..color = AppColors.guide,
+      );
+      tp.paint(canvas, offset + const Offset(7, 4));
     }
   }
 
   void _dashedVertical(
-      Canvas canvas, double x, double top, double bottom, Paint paint) {
+    Canvas canvas,
+    double x,
+    double top,
+    double bottom,
+    Paint paint,
+  ) {
     const dashLen = 8.0, gap = 6.0;
     double y = top;
     while (y < bottom) {
-      canvas.drawLine(Offset(x, y), Offset(x, math.min(y + dashLen, bottom)),
-          paint);
+      canvas.drawLine(
+        Offset(x, y),
+        Offset(x, math.min(y + dashLen, bottom)),
+        paint,
+      );
       y += dashLen + gap;
     }
   }
@@ -239,7 +578,11 @@ class _PreviewPainter extends CustomPainter {
         text: connected
             ? (previewOpen ? '等待画面...' : '正在打开摄像头...')
             : '未连接扫描仪\n\n$statusMessage',
-        style: const TextStyle(color: AppColors.textDim, fontSize: 15, height: 1.6),
+        style: const TextStyle(
+          color: AppColors.textDim,
+          fontSize: 15,
+          height: 1.6,
+        ),
       ),
       textDirection: TextDirection.ltr,
       textAlign: TextAlign.center,
@@ -248,11 +591,12 @@ class _PreviewPainter extends CustomPainter {
 
     // 边框占位
     canvas.drawRect(
-        Rect.fromLTWH(0, 0, size.width, size.height).deflate(20),
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1
-          ..color = AppColors.divider);
+      Rect.fromLTWH(0, 0, size.width, size.height).deflate(20),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = AppColors.divider,
+    );
   }
 
   @override
@@ -261,7 +605,10 @@ class _PreviewPainter extends CustomPainter {
       old.fitRect != fitRect ||
       old.mode != mode ||
       old.cutMode != cutMode ||
-      old.cutRect != cutRect ||
+      old.contentRect != contentRect ||
+      old.regions != regions ||
+      old.manual != manual ||
+      old.seam != seam ||
       old.previewOpen != previewOpen ||
       old.statusMessage != statusMessage;
 }

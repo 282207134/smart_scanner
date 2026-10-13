@@ -1,4 +1,4 @@
-/// 离线 Mock 后端：无设备时驱动整个 UI（开发/演示/macOS 未实现时降级）。
+/// 离线演示后端，用户明确选择演示模式后使用。
 ///
 /// 生成带时间码的测试图案帧（RGB），拍照返回生成的 BMP 字节。
 library;
@@ -9,8 +9,11 @@ import 'dart:typed_data';
 
 import '../core/models.dart';
 import 'scanner_backend.dart';
+import 'video_recorder.dart';
 
 class MockBackend implements ScannerBackend {
+  final bool emitFrames;
+  MockBackend({this.emitFrames = true});
   final _frames = StreamController<PreviewFrame>.broadcast();
   final _events = StreamController<ScannerEvent>.broadcast();
 
@@ -75,10 +78,12 @@ class MockBackend implements ScannerBackend {
     _canvasH = canvasH;
     _open = true;
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(milliseconds: 66), (_) {
-      _tick++;
-      _emitFrame();
-    });
+    if (emitFrames) {
+      _timer = Timer.periodic(const Duration(milliseconds: 66), (_) {
+        _tick++;
+        _emitFrame();
+      });
+    }
     _events.add(OpenStatusEvent(true));
   }
 
@@ -139,8 +144,15 @@ class MockBackend implements ScannerBackend {
       }
     }
     final bmp = _encodeBmp(rgb, w, h);
-    return CaptureResult(savedPath: savePath.isEmpty ? 'mock://capture' : savePath, imageBytes: bmp);
+    return CaptureResult(
+      savedPath: savePath.isEmpty ? 'mock://capture' : savePath,
+      imageBytes: bmp,
+    );
   }
+
+  @override
+  Future<CaptureResult> captureRaw({String savePath = ''}) =>
+      capture(savePath: savePath);
 
   static Uint8List _encodeBmp(Uint8List rgb, int w, int h) {
     final rowStride = ((w * 3 + 3) ~/ 4) * 4;
@@ -169,6 +181,35 @@ class MockBackend implements ScannerBackend {
       }
     }
     return u8;
+  }
+
+  VideoRecorder? _recorder;
+
+  @override
+  Future<VideoRecorder> startRecord(
+    String savePath,
+    int formatIndex, {
+    RecordSource source = RecordSource.camera,
+  }) async {
+    final fmt = RecordFormat.values[formatIndex.clamp(0, 2)];
+    final rec = VideoRecorder(
+      frames: _frames.stream,
+      savePath: savePath,
+      format: fmt,
+      width: _canvasW,
+      height: _canvasH,
+      source: source,
+    );
+    await rec.start();
+    _recorder = rec;
+    return rec;
+  }
+
+  @override
+  Future<void> stopRecord() async {
+    final r = _recorder;
+    _recorder = null;
+    if (r != null) await r.stop();
   }
 
   @override
@@ -225,31 +266,37 @@ class MockBackend implements ScannerBackend {
   }
 
   @override
-  Future<void> captureBook(String leftPath, String rightPath) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    _events.add(PdfEvent(true, 'Mock 书籍拍摄完成'));
+  Future<List<CaptureResult>> captureBook(
+    String leftPath,
+    String rightPath,
+  ) async {
+    return [
+      await capture(savePath: leftPath),
+      await capture(savePath: rightPath),
+    ];
   }
 
   @override
   Future<IdCardEvent> readIdCard(String savePath) async {
     await Future.delayed(const Duration(milliseconds: 400));
     final ev = IdCardEvent(
-        ok: true,
-        name: '张三',
-        sex: '男',
-        nation: '汉',
-        born: '1990-01-01',
-        address: '演示地址（Mock）',
-        cardNum: '123456789012345678',
-        issuedAt: '演示公安局',
-        effectedDate: '2020.01.01-2040.01.01');
+      ok: true,
+      name: '张三',
+      sex: '男',
+      nation: '汉',
+      born: '1990-01-01',
+      address: '演示地址（Mock）',
+      cardNum: '123456789012345678',
+      issuedAt: '演示公安局',
+      effectedDate: '2020.01.01-2040.01.01',
+    );
     _events.add(ev);
     return ev;
   }
 
   @override
   Future<void> startWiseCapture(String folderPath) async {
-    _events.add(RawEvent(0xE0, 'Mock 不支持自动连拍'));
+    throw UnsupportedError('演示模式不提供自动扫描');
   }
 
   @override

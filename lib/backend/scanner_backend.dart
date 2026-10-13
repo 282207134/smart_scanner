@@ -1,11 +1,12 @@
 /// 扫描仪后端抽象。
 ///
 /// Windows: KHServer WebSocket 协议 (KmServerBackend)
-/// macOS:   AVFoundation (MacAvfBackend, 骨架)
+/// macOS:   AVFoundation / Vision (MacAvfBackend)
 /// 离线:    MockBackend (无设备联调/UI开发)
 library;
 
 import '../core/models.dart';
+import 'video_recorder.dart';
 
 abstract class ScannerBackend {
   /// 连接后端（Windows: 连接 KHServer；macOS: 检查权限）
@@ -41,6 +42,9 @@ abstract class ScannerBackend {
   /// 拍照。[savePath] 非空时服务端直接保存到该路径（本机路径）。
   Future<CaptureResult> capture({String savePath = ''});
 
+  /// Full sensor image with rotation, without crop or color processing.
+  Future<CaptureResult> captureRaw({String savePath = ''});
+
   // ---- 视图控制 ----
   void zoomIn();
   void zoomOut();
@@ -65,12 +69,13 @@ abstract class ScannerBackend {
 
   // ---- 识别 ----
   void recognizeBarcodeFromCamera(int type);
+
   /// OCR 识别，返回识别结果（失败时 ok=false）
   Future<OcrEvent> ocrImage(String imagePath, OcrLanguage language);
   Future<IdCardEvent> readIdCard(String savePath);
 
   // ---- 书籍展平拍摄 ----
-  Future<void> captureBook(String leftPath, String rightPath);
+  Future<List<CaptureResult>> captureBook(String leftPath, String rightPath);
 
   // ---- 自动连拍 ----
   Future<void> startWiseCapture(String folderPath);
@@ -79,4 +84,15 @@ abstract class ScannerBackend {
   // ---- PDF ----
   Future<void> addImagesToPdf(List<String> imagePaths);
   Future<void> combineToPdf(String destPdfPath);
+
+  // ---- 视频录制 ----
+  /// 开始录制。[formatIndex] 0=MP4 1=WMV 2=AVI；返回录制器（含帧流订阅）
+  Future<VideoRecorder> startRecord(
+    String savePath,
+    int formatIndex, {
+    RecordSource source = RecordSource.camera,
+  });
+
+  /// 停止录制
+  Future<void> stopRecord();
 }

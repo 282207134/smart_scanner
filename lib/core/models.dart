@@ -41,29 +41,38 @@ enum CutMode {
   none('不裁切'),
   auto('自动裁切'),
   manual('手动裁切'),
-  custom('自定义区域');
+  multiImg('多图剪裁');
 
   const CutMode(this.label);
   final String label;
 }
 
-/// 输出效果（服务端0xA0：0彩色 1灰度 2黑白）
+/// 输出效果（服务端0xA0：0彩色 1灰度 2黑白 3文档优化 4白纸印章）
 enum ColorEffect {
   native('原生色彩', 0),
   grayscale('灰度', 1),
-  blackWhite('黑白', 2);
+  blackWhite('黑白', 2),
+  docOpt('文档优化', 3),
+  whitePaperStamp('白纸印章', 4);
 
   const ColorEffect(this.label, this.serverIndex);
   final String label;
   final int serverIndex;
 }
 
-/// 输出格式（服务端0x28：0=jpg 1=png 2=tif 3=pdf）
+/// 输出格式
 enum OutputFormat {
   jpg('JPG', 0, '.jpg'),
+  bmp('BMP', 0, '.bmp'), // Local conversion; SDK has no BMP output.
   png('PNG', 1, '.png'),
   tif('TIF', 2, '.tif'),
-  pdf('PDF', 3, '.pdf');
+  imagePdf('图像PDF', 3, '.pdf'),
+  txt('TXT', 5, '.txt'),
+  word('Word', 6, '.docx'),
+  excel('Excel', 7, '.xlsx'),
+  textPdf('文字PDF', 8, '.pdf'),
+  excelJpg('Excel-JPG', 9, '.jpg'),
+  txtJpg('txt-JPG', 10, '.jpg');
 
   const OutputFormat(this.label, this.serverIndex, this.ext);
   final String label;
@@ -73,8 +82,12 @@ enum OutputFormat {
 
 /// 命名方式
 enum NameStyle {
+  sequence('编号'),
   dateTime('日期时间'),
-  sequence('自增序号');
+  custom('自定义'),
+  folderName('以文件夹命名'),
+  idCardNum('证件号码'),
+  barcode('条码号');
 
   const NameStyle(this.label);
   final String label;
@@ -83,7 +96,9 @@ enum NameStyle {
 /// 展平方式（书籍模式，服务端0xE2）
 enum FlattenMode {
   none('不展平'),
-  flatten('展平');
+  singlePage('单页展平'),
+  flatten('双页展平'),
+  split('双页分割');
 
   const FlattenMode(this.label);
   final String label;
@@ -93,11 +108,33 @@ enum FlattenMode {
 enum OcrLanguage {
   chineseEnglish('中文简体,English', 0),
   english('English', 1),
-  chinese('中文简体', 2);
+  chinese('中文简体', 2),
+  japanese('日本語', 3);
 
   const OcrLanguage(this.label, this.serverIndex);
   final String label;
   final int serverIndex;
+}
+
+/// 视频录制格式（参考图：MP4/WMV/AVI）
+enum RecordFormat {
+  mp4('MP4', 0, '.mp4'),
+  wmv('WMV', 1, '.wmv'),
+  avi('AVI', 2, '.avi');
+
+  const RecordFormat(this.label, this.serverIndex, this.ext);
+  final String label;
+  final int serverIndex;
+  final String ext;
+}
+
+/// 视频录制来源（参考图：屏幕/摄像头）
+enum RecordSource {
+  screen('屏幕'),
+  camera('摄像头');
+
+  const RecordSource(this.label);
+  final String label;
 }
 
 /// 预览帧（canvas 坐标系下的一块 RGB 矩形）
@@ -107,12 +144,13 @@ class PreviewFrame {
   final int x;
   final int y;
   final Uint8List rgb; // 3字节/像素
-  const PreviewFrame(
-      {required this.width,
-      required this.height,
-      required this.x,
-      required this.y,
-      required this.rgb});
+  const PreviewFrame({
+    required this.width,
+    required this.height,
+    required this.x,
+    required this.y,
+    required this.rgb,
+  });
 }
 
 /// 拍摄结果
@@ -125,6 +163,7 @@ class CaptureResult {
 /// 已拍摄页面（缩略图列表项）
 class CapturedPage {
   final String filePath;
+  final String sourcePath;
   final Uint8List thumbnailJpg;
   final DateTime time;
   final String ocrText; // OCR结果（如有）
@@ -133,7 +172,8 @@ class CapturedPage {
     required this.thumbnailJpg,
     required this.time,
     this.ocrText = '',
-  });
+    String? sourcePath,
+  }) : sourcePath = sourcePath ?? filePath;
 }
 
 /// 后端事件基类
@@ -226,11 +266,12 @@ class WiseCaptureEvent extends ScannerEvent {
   final bool steady;
   final String path;
   final Uint8List? imageBytes;
-  WiseCaptureEvent(
-      {required this.done,
-      required this.steady,
-      this.path = '',
-      this.imageBytes});
+  WiseCaptureEvent({
+    required this.done,
+    required this.steady,
+    this.path = '',
+    this.imageBytes,
+  });
 }
 
 /// PDF 合并进度/结果

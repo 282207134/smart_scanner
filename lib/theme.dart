@@ -11,19 +11,19 @@ class AppColors {
   static const panel = Color(0xFF1B2440);
 
   /// 更深的底栏/工具栏
-  static const panelDark = Color(0xFF10162A);
+  static const panelDark = Color(0xFF1C2944);
 
   /// 卡片/悬浮
   static const card = Color(0xFF232D4D);
 
   /// 主强调（琥珀黄）
-  static const accent = Color(0xFFF5C518);
+  static const accent = Color(0xFFFFC83D);
 
   /// 次级强调（亮黄）
   static const accentSoft = Color(0xFFE8B93E);
 
   /// 预览区背景（近黑）
-  static const previewBg = Color(0xFF0A0E1A);
+  static const previewBg = Color(0xFF11182B);
 
   /// 框线/分隔
   static const divider = Color(0xFF2C3657);
@@ -57,6 +57,7 @@ ThemeData buildAppTheme() {
     ),
     scaffoldBackgroundColor: AppColors.bg,
     fontFamily: 'Microsoft YaHei',
+    fontFamilyFallback: const ['PingFang SC', 'Noto Sans CJK SC', 'Segoe UI'],
   );
   return base.copyWith(
     dropdownMenuTheme: const DropdownMenuThemeData(

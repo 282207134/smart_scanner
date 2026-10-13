@@ -1,186 +1,271 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../../core/models.dart';
 import '../../state/app_controller.dart';
 import '../../theme.dart';
 
-/// 右侧面板：拍摄按钮 + 已拍页面缩略图列表
 class ThumbsPanel extends StatelessWidget {
   final AppController controller;
   const ThumbsPanel({super.key, required this.controller});
-
   @override
   Widget build(BuildContext context) {
     final c = controller;
     return Container(
-      width: 190,
+      width: 206,
       color: AppColors.panelDark,
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 拍摄按钮
-          Material(
-            color: c.capturing ? AppColors.accentSoft : AppColors.accent,
-            borderRadius: BorderRadius.circular(8),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: c.capturing
-                  ? null
-                  : () {
-                      if (c.mode.name == 'book') {
-                        c.captureBook();
-                      } else {
-                        c.capture();
-                      }
-                    },
-              child: Container(
-                height: 56,
-                alignment: Alignment.center,
-                child: c.capturing
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2.4, color: Colors.black))
-                    : const Text(
-                        '拍摄',
-                        style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.black),
-                      ),
-              ),
+          Text(
+            '已扫描 ${c.pages.length} 页',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: c.pages.isNotEmpty && !c.busy ? c.exportPdf : null,
+            icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+            label: Text(
+              c.selectedPaths.isEmpty
+                  ? '导出PDF'
+                  : '导出所选 ${c.selectedPaths.length} 页',
+              style: const TextStyle(fontSize: 12),
             ),
           ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('已扫描 ${c.pages.length} 页',
-                  style:
-                      const TextStyle(fontSize: 12, color: AppColors.textDim)),
-              if (c.pages.isNotEmpty)
-                InkWell(
-                  onTap: () => c.exportPdf(),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.picture_as_pdf,
-                          size: 13, color: AppColors.accent),
-                      SizedBox(width: 3),
-                      Text('导出PDF',
-                          style: TextStyle(
-                              fontSize: 12, color: AppColors.accent)),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
           Expanded(
             child: c.pages.isEmpty
-                ? Center(
-                    child: Text('拍摄的页面\n会出现在这里',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
+                ? const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.photo_library_outlined,
+                          size: 36,
+                          color: AppColors.textDim,
+                        ),
+                        SizedBox(height: 14),
+                        Text(
+                          '拍摄或导入图片',
+                          style: TextStyle(fontSize: 13, color: AppColors.text),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          '在这里选择、排序\n并合成多页 PDF',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
                             fontSize: 12,
-                            height: 1.7,
-                            color: AppColors.textDim.withValues(alpha: 0.7))),
+                            height: 1.6,
+                            color: AppColors.textDim,
+                          ),
+                        ),
+                      ],
+                    ),
                   )
                 : ListView.separated(
                     itemCount: c.pages.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (context, i) {
-                      final page = c.pages[c.pages.length - 1 - i];
-                      final idx = c.pages.length - 1 - i;
-                      return _thumb(c, page, idx);
-                    },
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, i) => _thumb(context, c.pages[i], i),
                   ),
           ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: () => c.openFile(c.outputDir),
+            icon: const Icon(Icons.folder_open, size: 16),
+            label: const Text('打开保存目录', style: TextStyle(fontSize: 12)),
+          ),
+          if (c.lastExportPath.isNotEmpty)
+            TextButton(
+              onPressed: () => c.openFile(c.lastExportPath),
+              child: const Text('查看刚导出的文件', style: TextStyle(fontSize: 12)),
+            ),
         ],
       ),
     );
   }
 
-  Widget _thumb(AppController c, dynamic page, int index) {
-    final Uint8List bytes = page.thumbnailJpg as Uint8List;
-    return Stack(
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.card,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: AppColors.divider),
-          ),
-          padding: const EdgeInsets.all(4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: bytes.isEmpty
-                    ? Container(
-                        height: 96,
-                        width: double.infinity,
-                        color: AppColors.panelDark,
-                        child: const Icon(Icons.image_outlined,
-                            color: AppColors.textDim),
-                      )
-                    : Image.memory(
-                        bytes,
-                        height: 96,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                      ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _timeLabel(page.time as DateTime),
-                style:
-                    const TextStyle(fontSize: 11, color: AppColors.textDim),
-              ),
-              if ((page.ocrText as String).isNotEmpty)
-                const Text('已OCR',
-                    style: TextStyle(fontSize: 10, color: AppColors.ok)),
-            ],
-          ),
-        ),
-        Positioned(
-          top: 2,
-          right: 2,
-          child: Row(
-            children: [
-              _miniBtn(Icons.folder_open, () {
-                final path = page.filePath as String;
-                if (File(path).existsSync()) {
-                  Process.run('explorer', ['/select,', path]);
-                }
-              }),
-              _miniBtn(Icons.delete_outline, () => c.removePage(index)),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _miniBtn(IconData icon, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
+  Widget _thumb(BuildContext context, CapturedPage page, int index) {
+    final c = controller, active = controller.selectedPage == index;
+    return Material(
+      color: active ? AppColors.card : AppColors.panel,
       borderRadius: BorderRadius.circular(4),
-      child: Container(
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(4),
+      child: InkWell(
+        onTap: () => c.selectPage(index),
+        onDoubleTap: () => _view(context, page),
+        borderRadius: BorderRadius.circular(4),
+        child: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: active ? AppColors.accent : AppColors.divider,
+            ),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Column(
+            children: [
+              Stack(
+                children: [
+                  Container(
+                    height: 110,
+                    width: double.infinity,
+                    color: AppColors.previewBg,
+                    child: page.thumbnailJpg.isEmpty
+                        ? const Icon(
+                            Icons.insert_drive_file_outlined,
+                            color: AppColors.textDim,
+                          )
+                        : Image.memory(
+                            page.thumbnailJpg,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, _, _) =>
+                                const Icon(Icons.broken_image_outlined),
+                          ),
+                  ),
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: Checkbox(
+                        value: c.selectedPaths.contains(page.filePath),
+                        onChanged: c.busy
+                            ? null
+                            : (_) => c.toggleSelected(page.filePath),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 2,
+                    top: 2,
+                    child: Container(
+                      color: AppColors.panelDark,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
+                      child: Text(
+                        '${index + 1}',
+                        style: const TextStyle(fontSize: 10),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              Tooltip(
+                message: page.filePath,
+                child: Text(
+                  AppController.basename(page.filePath),
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11),
+                ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  if (page.ocrText.isNotEmpty)
+                    const Icon(
+                      Icons.text_snippet,
+                      size: 14,
+                      color: AppColors.ok,
+                    ),
+                  _button(
+                    Icons.arrow_upward,
+                    '向前移动',
+                    () => c.movePage(index, -1),
+                  ),
+                  _button(
+                    Icons.arrow_downward,
+                    '向后移动',
+                    () => c.movePage(index, 1),
+                  ),
+                  _button(
+                    Icons.open_in_new,
+                    '查看图片',
+                    () => _view(context, page),
+                  ),
+                  _button(
+                    Icons.delete_outline,
+                    '移出列表（保留文件）',
+                    () => c.removePage(index),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        child: Icon(icon, size: 13, color: AppColors.text),
       ),
     );
   }
 
-  String _timeLabel(DateTime t) =>
-      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
+  Widget _button(IconData icon, String label, VoidCallback action) => SizedBox(
+    width: 27,
+    height: 27,
+    child: IconButton(
+      padding: EdgeInsets.zero,
+      tooltip: label,
+      icon: Icon(icon, size: 15, color: AppColors.textDim),
+      onPressed: controller.busy ? null : action,
+    ),
+  );
+  Future<void> _view(BuildContext context, CapturedPage page) =>
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => Dialog(
+          child: SizedBox(
+            width: 900,
+            height: 680,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: 18, right: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          AppController.basename(page.filePath),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: InteractiveViewer(
+                    minScale: .2,
+                    maxScale: 6,
+                    child: Image.file(
+                      File(page.sourcePath),
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) =>
+                          const Center(child: Text('原始图片不存在')),
+                    ),
+                  ),
+                ),
+                if (page.ocrText.isNotEmpty)
+                  SizedBox(
+                    height: 140,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: SelectableText(page.ocrText),
+                    ),
+                  ),
+                TextButton.icon(
+                  onPressed: () =>
+                      controller.openFile(page.filePath, reveal: true),
+                  icon: const Icon(Icons.folder_open, size: 16),
+                  label: const Text('在文件夹中显示'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 }

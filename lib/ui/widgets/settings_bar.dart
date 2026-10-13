@@ -1,371 +1,354 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/models.dart';
 import '../../state/app_controller.dart';
 import '../../theme.dart';
 
-/// 参数栏（不同模式显示不同参数组）
-class SettingsBar extends StatelessWidget {
+class SettingsBar extends StatefulWidget {
   final AppController controller;
   const SettingsBar({super.key, required this.controller});
+  @override
+  State<SettingsBar> createState() => _SettingsBarState();
+}
+
+class _SettingsBarState extends State<SettingsBar> {
+  AppController get c => widget.controller;
+  late final TextEditingController _prefix = TextEditingController(
+    text: c.prefix,
+  );
+  @override
+  void dispose() {
+    _prefix.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final c = controller;
+    final video = c.mode == ScanMode.video, ocr = c.mode == ScanMode.ocr;
+    final book = c.mode == ScanMode.book, id = c.mode == ScanMode.idCard;
     return Container(
       color: AppColors.panel,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: switch (c.mode) {
-          ScanMode.document => _documentBar(c),
-          ScanMode.book => _bookBar(c),
-          ScanMode.idCard => _idCardBar(c),
-          ScanMode.barcode => _barcodeBar(c),
-          ScanMode.ocr => _ocrBar(c),
-          _ => const SizedBox.shrink(),
-        },
-      ),
-    );
-  }
-
-  Widget _documentBar(AppController c) {
-    return Row(
-      children: [
-        LabeledSelect<CutMode>(
-          label: '裁切方式',
-          value: c.cutMode,
-          items: CutMode.values,
-          onChanged: (v) => c.setCutMode(v!),
-        ),
-        _check('智能修边', c.smartEdge, c.setSmartEdge),
-        _check('去底色', c.removeBg, c.setRemoveBg),
-        LabeledSelect<ColorEffect>(
-          label: '输出效果',
-          value: c.colorEffect,
-          items: ColorEffect.values,
-          onChanged: (v) => c.setColorEffect(v!),
-        ),
-        LabeledSelect<OutputFormat>(
-          label: '输出格式',
-          value: c.outputFormat,
-          items: OutputFormat.values,
-          onChanged: (v) => c.setOutputFormat(v!),
-        ),
-        LabeledSelect<NameStyle>(
-          label: '命名方式',
-          value: c.nameStyle,
-          items: NameStyle.values,
-          onChanged: (v) => c.setNameStyle(v!),
-        ),
-        _prefixField(c),
-        _qualityControl(c),
-      ],
-    );
-  }
-
-  Widget _bookBar(AppController c) {
-    return Row(
-      children: [
-        LabeledSelect<FlattenMode>(
-          label: '展平方式',
-          value: c.flattenMode,
-          items: FlattenMode.values,
-          onChanged: (v) => c.setFlattenMode(v!),
-        ),
-        LabeledSelect<ColorEffect>(
-          label: '输出效果',
-          value: c.colorEffect,
-          items: ColorEffect.values,
-          onChanged: (v) => c.setColorEffect(v!),
-        ),
-        LabeledSelect<OutputFormat>(
-          label: '输出格式',
-          value: c.outputFormat,
-          items: OutputFormat.values,
-          onChanged: (v) => c.setOutputFormat(v!),
-        ),
-        LabeledSelect<NameStyle>(
-          label: '命名方式',
-          value: c.nameStyle,
-          items: NameStyle.values,
-          onChanged: (v) => c.setNameStyle(v!),
-        ),
-        _prefixField(c),
-        _qualityControl(c),
-        const SizedBox(width: 10),
-        _actionChip(Icons.auto_stories, '左右页一次拍摄', null),
-      ],
-    );
-  }
-
-  Widget _idCardBar(AppController c) {
-    return Row(
-      children: [
-        _actionButton(Icons.nfc, '读取身份证', () => c.readIdCard()),
-        const SizedBox(width: 10),
-        _actionChip(Icons.badge_outlined, '支持读取信息 + 正反面合并照', null),
-        if (c.lastIdCard != null) ...[
-          const SizedBox(width: 14),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Text(
-              '${c.lastIdCard!.name}  ${c.lastIdCard!.sex}  ${c.lastIdCard!.nation}  '
-              '${c.lastIdCard!.cardNum}  ${c.lastIdCard!.effectedDate}',
-              style: const TextStyle(fontSize: 12, color: AppColors.ok),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _barcodeBar(AppController c) {
-    return Row(
-      children: [
-        _actionButton(Icons.barcode_reader, '识别条码', () =>
-            c.recognizeBarcode(qrcode: false)),
-        const SizedBox(width: 10),
-        _actionButton(Icons.qr_code_2, '识别二维码', () =>
-            c.recognizeBarcode(qrcode: true)),
-        const SizedBox(width: 14),
-        SizedBox(
-          width: 360,
-          child: Text(
-            c.lastBarcode.isEmpty ? '将条码/二维码放入画面后点击识别' : '识别结果: ${c.lastBarcode}',
-            style: TextStyle(
-                fontSize: 13,
-                color: c.lastBarcode.isEmpty
-                    ? AppColors.textDim
-                    : AppColors.accent),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _ocrBar(AppController c) {
-    return Row(
-      children: [
-        LabeledSelect<OcrLanguage>(
-          label: '识别语言',
-          value: c.ocrLanguage,
-          items: OcrLanguage.values,
-          onChanged: (v) => c.setOcrLanguage(v!),
-        ),
-        const SizedBox(width: 10),
-        _actionButton(Icons.document_scanner, '识别上一张',
-            () => c.ocrLastCapture()),
-        const SizedBox(width: 14),
-        SizedBox(
-          width: 420,
-          child: Text(
-            c.ocrStatus.isNotEmpty
-                ? c.ocrStatus
-                : (c.lastOcrText.isEmpty
-                    ? '拍摄后点击"识别上一张"进行OCR'
-                    : c.lastOcrText),
-            style: const TextStyle(fontSize: 12, color: AppColors.textDim),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _check(String label, bool value, ValueChanged<bool> onChanged) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 14, left: 6),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 16,
-            height: 16,
-            child: Checkbox(
-              value: value,
-              onChanged: (v) => onChanged(v ?? false),
-              activeColor: AppColors.accent,
-              side: const BorderSide(color: AppColors.textDim),
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              visualDensity: VisualDensity.compact,
-            ),
-          ),
-          const SizedBox(width: 5),
-          Text(label,
-              style: const TextStyle(fontSize: 13, color: AppColors.text)),
-        ],
-      ),
-    );
-  }
-
-  Widget _prefixField(AppController c) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 14, left: 6),
-      child: Row(
-        children: [
-          const Text('前缀',
-              style: TextStyle(fontSize: 13, color: AppColors.textDim)),
-          const SizedBox(width: 6),
-          SizedBox(
-            width: 110,
-            height: 30,
-            child: TextField(
-              style: const TextStyle(fontSize: 13, color: AppColors.text),
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: 'Pic_',
-                hintStyle:
-                    const TextStyle(fontSize: 13, color: AppColors.textDim),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                enabledBorder: OutlineInputBorder(
-                  borderSide:
-                      const BorderSide(color: AppColors.divider, width: 1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide:
-                      const BorderSide(color: AppColors.accent, width: 1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      child: IgnorePointer(
+        ignoring: c.busy || c.recording || c.autoScan,
+        child: Wrap(
+          spacing: 20,
+          runSpacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            if (!video && !ocr && !book)
+              _select(
+                '裁切方式',
+                c.cutMode,
+                CutMode.values
+                    .where(
+                      (v) =>
+                          c.mode == ScanMode.document || v != CutMode.multiImg,
+                    )
+                    .toList(),
+                c.setCutMode,
               ),
-              controller: TextEditingController(text: c.prefix)
-                ..selection = TextSelection.collapsed(offset: c.prefix.length),
-              onSubmitted: c.setPrefix,
-              onChanged: c.setPrefix,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _qualityControl(AppController c) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 6),
-      child: Row(
-        children: [
-          const Text('画质',
-              style: TextStyle(fontSize: 13, color: AppColors.textDim)),
-          SizedBox(
-            width: 110,
-            child: Slider(
-              value: c.jpgQuality.toDouble(),
-              min: 30,
-              max: 100,
-              divisions: 14,
-              label: '${c.jpgQuality}',
-              activeColor: AppColors.accent,
-              inactiveColor: AppColors.divider,
-              onChanged: (v) => c.setJpgQuality(v.round()),
-            ),
-          ),
-          Text('${c.jpgQuality}',
-              style: const TextStyle(fontSize: 12, color: AppColors.text)),
-        ],
-      ),
-    );
-  }
-
-  Widget _actionButton(IconData icon, String label, VoidCallback onTap) {
-    return Material(
-      color: AppColors.card,
-      borderRadius: BorderRadius.circular(6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(6),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 15, color: AppColors.accent),
-              const SizedBox(width: 6),
-              Text(label,
-                  style:
-                      const TextStyle(fontSize: 13, color: AppColors.text)),
+            if (book)
+              _select(
+                '展平方式',
+                c.flattenMode,
+                FlattenMode.values,
+                c.setFlattenMode,
+                format: (v) => v.label,
+              ),
+            if (c.mode == ScanMode.document ||
+                book ||
+                c.mode == ScanMode.barcode) ...[
+              _select(
+                '扫描模式',
+                c.autoMode,
+                const [false, true],
+                c.setAutoMode,
+                format: (v) => v ? '自动' : '手动',
+              ),
+              if (c.autoMode)
+                _select(
+                  '静止倒计时',
+                  c.autoDelaySeconds,
+                  List.generate(10, (i) => i + 1),
+                  c.setAutoDelay,
+                  format: (v) => '$v 秒',
+                ),
             ],
-          ),
+            if (!video && !ocr)
+              _select(
+                '输出效果',
+                c.colorEffect,
+                c.availableColorEffects,
+                c.setColorEffect,
+              ),
+            if (c.mode == ScanMode.document || book)
+              _select(
+                '扫描页面',
+                c.multiPage,
+                const [false, true],
+                c.setMultiPage,
+                format: (v) => v ? '多页 PDF' : '单页',
+              ),
+            if (!video)
+              _select(
+                '输出格式',
+                c.outputFormat,
+                c.availableFormats,
+                c.setOutputFormat,
+              ),
+            if (video) ...[
+              _select(
+                '录制来源',
+                c.recordSource,
+                RecordSource.values,
+                c.setRecordSource,
+              ),
+              _select(
+                '录制格式',
+                c.recordFormat,
+                RecordFormat.values,
+                c.setRecordFormat,
+                format: (v) => v.label,
+              ),
+            ],
+            if (!id &&
+                !video &&
+                c.mode != ScanMode.contract &&
+                c.mode != ScanMode.barcode)
+              _select(
+                '识别语言',
+                c.ocrLanguage,
+                OcrLanguage.values,
+                c.setOcrLanguage,
+              ),
+            if (!ocr)
+              _select(
+                '命名方式',
+                c.nameStyle,
+                c.availableNameStyles,
+                c.setNameStyle,
+              ),
+            if (!ocr)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    '前缀',
+                    style: TextStyle(fontSize: 13, color: AppColors.textDim),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 120,
+                    height: 32,
+                    child: TextField(
+                      key: const Key('filename-prefix'),
+                      controller: _prefix,
+                      style: const TextStyle(fontSize: 13),
+                      onChanged: c.setPrefix,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        filled: true,
+                        fillColor: AppColors.panelDark,
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 9,
+                        ),
+                        border: OutlineInputBorder(),
+                        hintText: 'Pic_',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            if (c.mode == ScanMode.document ||
+                id ||
+                c.mode == ScanMode.contract)
+              _check('智能修边', c.smartEdge, c.setSmartEdge),
+            if (id) ...[
+              _check('正反面合并', c.mergeIdSides, c.setMergeIdSides),
+              if (!Platform.isMacOS)
+                TextButton.icon(
+                  onPressed: c.connected ? c.readIdCard : null,
+                  icon: const Icon(Icons.nfc, size: 16),
+                  label: const Text('读取身份证'),
+                ),
+            ],
+            if (c.mode == ScanMode.barcode) ...[
+              _select('识别类型', c.qrcode, [false, true], (v) {
+                c.qrcode = v;
+                c.notifyListeners();
+              }, format: (v) => v ? '二维码' : '条码'),
+              TextButton.icon(
+                onPressed: () => c.recognizeBarcode(qrcode: c.qrcode),
+                icon: const Icon(Icons.qr_code_scanner, size: 16),
+                label: const Text('开始识别'),
+              ),
+              if (c.lastBarcode.isNotEmpty)
+                SizedBox(
+                  width: 240,
+                  child: SelectableText(
+                    c.lastBarcode,
+                    style: const TextStyle(
+                      color: AppColors.accent,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+            ],
+            if (ocr) ...[
+              TextButton.icon(
+                onPressed: c.currentPage != null ? c.ocrLastCapture : null,
+                icon: const Icon(Icons.text_snippet_outlined, size: 16),
+                label: const Text('识别所选图片'),
+              ),
+              TextButton.icon(
+                onPressed: c.lastOcrText.isNotEmpty ? c.exportOcr : null,
+                icon: const Icon(Icons.save_alt, size: 16),
+                label: const Text('导出文字'),
+              ),
+            ],
+            if (c.mode == ScanMode.contract) ...[
+              _markButton(false),
+              _markButton(true),
+              _select('签章位置', c.markCorner, [0, 1, 2, 3], (v) {
+                c.markCorner = v;
+                c.notifyListeners();
+              }, format: (v) => ['左上', '右上', '左下', '右下'][v]),
+              _select('签章尺寸', c.markSize, [.1, .2, .3, .4], (v) {
+                c.markSize = v;
+                c.notifyListeners();
+              }, format: (v) => '${(v * 100).round()}%'),
+            ],
+          ],
         ),
       ),
     );
   }
 
-  Widget _actionChip(IconData icon, String label, VoidCallback? onTap) {
-    return Row(
-      children: [
-        Icon(icon, size: 14, color: AppColors.textDim),
-        const SizedBox(width: 5),
-        Text(label,
-            style: const TextStyle(fontSize: 12, color: AppColors.textDim)),
-      ],
+  Widget _markButton(bool stamp) {
+    final active = (stamp ? c.stampBytes : c.signatureBytes) != null;
+    return TextButton.icon(
+      onPressed: () async {
+        final file = await openFile(
+          acceptedTypeGroups: [
+            const XTypeGroup(
+              label: '签名 / 印章图片',
+              extensions: ['png', 'jpg', 'jpeg', 'bmp'],
+            ),
+          ],
+        );
+        if (file != null) c.setMark(await file.readAsBytes(), stamp: stamp);
+      },
+      icon: Icon(
+        stamp ? Icons.approval_outlined : Icons.draw_outlined,
+        size: 16,
+      ),
+      label: Text('${active ? '更换' : '添加'}${stamp ? '印章' : '签名'}'),
     );
   }
+
+  Widget _select<T>(
+    String label,
+    T value,
+    List<T> items,
+    ValueChanged<T> changed, {
+    String Function(T)? format,
+  }) => LabeledSelect<T>(
+    label: label,
+    value: value,
+    items: items,
+    onChanged: (v) {
+      if (v != null) changed(v);
+    },
+    format: format,
+  );
+  Widget _check(String label, bool value, ValueChanged<bool> changed) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      SizedBox(
+        width: 24,
+        height: 28,
+        child: Checkbox(
+          value: value,
+          onChanged: (v) => changed(v ?? false),
+          visualDensity: VisualDensity.compact,
+        ),
+      ),
+      const SizedBox(width: 4),
+      Text(label, style: const TextStyle(fontSize: 13)),
+    ],
+  );
 }
 
-/// 带标签的下拉选择
 class LabeledSelect<T> extends StatelessWidget {
   final String label;
   final T value;
   final List<T> items;
   final ValueChanged<T?> onChanged;
   final String Function(T)? format;
-  const LabeledSelect(
-      {super.key,
-      required this.label,
-      required this.value,
-      required this.items,
-      required this.onChanged,
-      this.format});
-
+  const LabeledSelect({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+    this.format,
+  });
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 14),
-      child: Row(
-        children: [
-          Text(label,
-              style: const TextStyle(fontSize: 13, color: AppColors.textDim)),
-          const SizedBox(width: 6),
-          Container(
-            height: 30,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              color: AppColors.panelDark,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: AppColors.divider),
-            ),
-            child: DropdownButton<T>(
-              value: value,
-              isDense: true,
-              underline: const SizedBox.shrink(),
-              dropdownColor: AppColors.card,
-              style:
-                  const TextStyle(fontSize: 13, color: AppColors.text),
-              items: [
-                for (final it in items)
-                  DropdownMenuItem(
-                      value: it,
-                      child: Text(format?.call(it) ?? _labelOf(it))),
-              ],
-              onChanged: onChanged,
-            ),
-          ),
-        ],
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      if (label.isNotEmpty) ...[
+        Text(
+          label,
+          style: const TextStyle(fontSize: 13, color: AppColors.textDim),
+        ),
+        const SizedBox(width: 8),
+      ],
+      Container(
+        height: 32,
+        width: 138,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        decoration: BoxDecoration(
+          color: AppColors.panelDark,
+          borderRadius: BorderRadius.circular(3),
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: DropdownButton<T>(
+          value: items.contains(value) ? value : items.firstOrNull,
+          isExpanded: true,
+          isDense: true,
+          underline: const SizedBox.shrink(),
+          dropdownColor: AppColors.card,
+          style: const TextStyle(fontSize: 13, color: AppColors.text),
+          items: [
+            for (final it in items)
+              DropdownMenuItem(
+                value: it,
+                child: Text(
+                  format?.call(it) ?? _label(it),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: onChanged,
+        ),
       ),
-    );
-  }
-
-  String _labelOf(T it) {
-    if (it is CutMode) return it.label;
-    if (it is ColorEffect) return it.label;
-    if (it is OutputFormat) return it.label;
-    if (it is NameStyle) return it.label;
-    if (it is FlattenMode) return it.label;
-    if (it is OcrLanguage) return it.label;
-    return '$it';
-  }
+    ],
+  );
+  String _label(T value) => switch (value) {
+    CutMode v => v.label,
+    ColorEffect v => v.label,
+    OutputFormat v => v.label,
+    NameStyle v => v.label,
+    FlattenMode v => v.label,
+    OcrLanguage v => v.label,
+    RecordFormat v => v.label,
+    RecordSource v => v.label,
+    _ => '$value',
+  };
 }

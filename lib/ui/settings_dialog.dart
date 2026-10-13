@@ -8,13 +8,17 @@ import 'widgets/settings_bar.dart';
 
 /// 输出设置对话框
 Future<void> showOutputSettingsDialog(
-    BuildContext context, AppController c) async {
+  BuildContext context,
+  AppController c,
+) async {
   await showDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setState) => AlertDialog(
-        title: const Text('输出设置',
-            style: TextStyle(fontSize: 16, color: AppColors.text)),
+        title: const Text(
+          '输出设置',
+          style: TextStyle(fontSize: 16, color: AppColors.text),
+        ),
         content: SizedBox(
           width: 460,
           child: Column(
@@ -23,16 +27,21 @@ Future<void> showOutputSettingsDialog(
             children: [
               _row('保存目录', [
                 Expanded(
-                  child: Text(c.outputDir,
-                      style: const TextStyle(
-                          fontSize: 12, color: AppColors.textDim),
-                      overflow: TextOverflow.ellipsis),
+                  child: Text(
+                    c.outputDir,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textDim,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.accent,
-                      foregroundColor: Colors.black),
+                    backgroundColor: AppColors.accent,
+                    foregroundColor: Colors.black,
+                  ),
                   icon: const Icon(Icons.folder_open, size: 15),
                   label: const Text('选择目录'),
                   onPressed: () async {
@@ -47,7 +56,7 @@ Future<void> showOutputSettingsDialog(
                 LabeledSelect<NameStyle>(
                   label: '',
                   value: c.nameStyle,
-                  items: NameStyle.values,
+                  items: c.availableNameStyles,
                   onChanged: (v) {
                     c.setNameStyle(v!);
                     setState(() {});
@@ -59,15 +68,17 @@ Future<void> showOutputSettingsDialog(
                 LabeledSelect<OutputFormat>(
                   label: '',
                   value: c.outputFormat,
-                  items: OutputFormat.values,
+                  items: c.availableFormats,
                   onChanged: (v) {
                     c.setOutputFormat(v!);
                     setState(() {});
                   },
                 ),
                 const SizedBox(width: 16),
-                const Text('JPG画质',
-                    style: TextStyle(fontSize: 13, color: AppColors.textDim)),
+                const Text(
+                  'JPG画质',
+                  style: TextStyle(fontSize: 13, color: AppColors.textDim),
+                ),
                 SizedBox(
                   width: 140,
                   child: Slider(
@@ -87,7 +98,7 @@ Future<void> showOutputSettingsDialog(
               ]),
               const SizedBox(height: 6),
               const Text(
-                '提示：拍摄的文件由扫描仪服务直接保存到本机目录；导出PDF使用左侧工具栏按钮。',
+                '拍摄与导出保存在所选目录。勾选、调整页面顺序后可导出 PDF；原图会保留。',
                 style: TextStyle(fontSize: 11, color: AppColors.textDim),
               ),
             ],
@@ -110,8 +121,10 @@ Widget _row(String label, List<Widget> children) {
     children: [
       SizedBox(
         width: 64,
-        child: Text(label,
-            style: const TextStyle(fontSize: 13, color: AppColors.textDim)),
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 13, color: AppColors.textDim),
+        ),
       ),
       ...children,
     ],

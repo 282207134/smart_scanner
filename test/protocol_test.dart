@@ -96,15 +96,17 @@ void main() {
 
     test('打开结果', () {
       expect(
-          (KmParser.parse(Uint8List.fromList([0x55, 0x66, 0x01, 0x01]))
-              as KmOpenStatus)
-              .ok,
-          isTrue);
+        (KmParser.parse(
+          Uint8List.fromList([0x55, 0x66, 0x01, 0x01]),
+        ) as KmOpenStatus).ok,
+        isTrue,
+      );
       expect(
-          (KmParser.parse(Uint8List.fromList([0x55, 0x66, 0x01, 0x00]))
-              as KmOpenStatus)
-              .ok,
-          isFalse);
+        (KmParser.parse(
+          Uint8List.fromList([0x55, 0x66, 0x01, 0x00]),
+        ) as KmOpenStatus).ok,
+        isFalse,
+      );
     });
 
     test('预览帧 RGB 布局', () {
@@ -127,9 +129,7 @@ void main() {
     });
 
     test('预览帧尺寸不符时丢弃', () {
-      final bytes = <int>[
-        0x55, 0x66, 0xCC, 0, 2, 0, 2, 0, 0, 0, 0, 1, 2, 3,
-      ];
+      final bytes = <int>[0x55, 0x66, 0xCC, 0, 2, 0, 2, 0, 0, 0, 0, 1, 2, 3];
       expect(KmParser.parse(Uint8List.fromList(bytes)), isNull);
     });
 
@@ -143,31 +143,31 @@ void main() {
         b64.length >> 16, b64.length >> 8, b64.length & 0xff, //
         ...path, ...b64,
       ];
-      final r =
-          KmParser.parse(Uint8List.fromList(bytes)) as KmCaptureResult;
+      final r = KmParser.parse(Uint8List.fromList(bytes)) as KmCaptureResult;
       expect(r.ok, isTrue);
       expect(r.path, 'C:/out/a.jpg');
       expect(r.imageBytes, jpg);
     });
 
     test('拍照失败短包', () {
-      final r = KmParser.parse(Uint8List.fromList([0x55, 0x66, 0x10, 0x00]))
-          as KmCaptureResult;
+      final r = KmParser.parse(
+        Uint8List.fromList([0x55, 0x66, 0x10, 0x00]),
+      ) as KmCaptureResult;
       expect(r.ok, isFalse);
     });
 
     test('OCR 授权失败 flag=40 —— 与厂商 demo 一致', () {
       final r = KmParser.parse(
-              Uint8List.fromList([0x55, 0x66, 0xC2, 0x28, 0x00]))
-          as KmOcr;
+        Uint8List.fromList([0x55, 0x66, 0xC2, 0x28, 0x00]),
+      ) as KmOcr;
       expect(r.ok, isFalse);
       expect(r.licenseFailed, isTrue);
     });
 
     test('OCR 进度上报 flag=1', () {
       final r = KmParser.parse(
-              Uint8List.fromList([0x55, 0x66, 0xC2, 0x01, 0x32]))
-          as KmOcr;
+        Uint8List.fromList([0x55, 0x66, 0xC2, 0x01, 0x32]),
+      ) as KmOcr;
       expect(r.isProgress, isTrue);
       expect(r.progress, 50);
     });
@@ -190,7 +190,8 @@ void main() {
 
     test('未知命令落到 KmGeneric', () {
       final r = KmParser.parse(
-          Uint8List.fromList([0x55, 0x66, 0x77, 0x01, 0x4F, 0x4B]));
+        Uint8List.fromList([0x55, 0x66, 0x77, 0x01, 0x4F, 0x4B]),
+      );
       expect(r, isA<KmGeneric>());
       final g = r as KmGeneric;
       expect(g.cmd, 0x77);
@@ -201,8 +202,10 @@ void main() {
     test('非协议数据返回 null', () {
       expect(KmParser.parse(Uint8List.fromList([1, 2])), isNull);
       expect(KmParser.parse(Uint8List.fromList([0x55, 0x66])), isNull);
-      expect(KmParser.parse(Uint8List.fromList([0xAA, 0xBB, 0x01, 0x00])),
-          isNull);
+      expect(
+        KmParser.parse(Uint8List.fromList([0xAA, 0xBB, 0x01, 0x00])),
+        isNull,
+      );
     });
   });
 }

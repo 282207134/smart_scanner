@@ -30,8 +30,9 @@ class WsClient {
   final StreamController<Uint8List> _messages = StreamController.broadcast();
   final StreamController<String> _closes = StreamController.broadcast();
 
-  Uint8List _buf = Uint8List(0);
+  Uint8List _buf = Uint8List(64 * 1024);
   int _readPos = 0;
+  int _writePos = 0;
 
   // 分片重组状态
   final BytesBuilder _frag = BytesBuilder(copy: false);
@@ -43,17 +44,23 @@ class WsClient {
   WsClient._(this._socket);
 
   /// 连接并完成握手。
-  static Future<WsClient> connect(String host, int port,
-      {String path = '/', Duration timeout = const Duration(seconds: 5)}) async {
+  static Future<WsClient> connect(
+    String host,
+    int port, {
+    String path = '/',
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
     final socket = await Socket.connect(host, port, timeout: timeout);
     socket.setOption(SocketOption.tcpNoDelay, true);
 
     final keyBytes = Uint8List.fromList(
-        List<int>.generate(16, (_) => Random.secure().nextInt(256)));
+      List<int>.generate(16, (_) => Random.secure().nextInt(256)),
+    );
     final key = base64Encode(keyBytes);
 
     // 注意：头字段名的大小写必须保持规范形式，KHServer 大小写敏感。
-    final req = 'GET $path HTTP/1.1\r\n'
+    final req =
+        'GET $path HTTP/1.1\r\n'
         'Host: $host:$port\r\n'
         'Connection: Upgrade\r\n'
         'Upgrade: websocket\r\n'
@@ -68,43 +75,51 @@ class WsClient {
     final handshakeDone = Completer<void>();
 
     late StreamSubscription<Uint8List> sub;
-    sub = socket.listen((chunk) {
-      if (!handshakeDone.isCompleted) {
-        hsBuf.add(chunk);
-        final bytes = hsBuf.toBytes();
-        final idx = indexOfCRLFCRLF(bytes);
-        if (idx < 0) {
-          if (bytes.length > 64 * 1024 && !handshakeDone.isCompleted) {
-            handshakeDone.completeError(WsException('handshake response too large'));
+    sub = socket.listen(
+      (chunk) {
+        if (!handshakeDone.isCompleted) {
+          hsBuf.add(chunk);
+          final bytes = hsBuf.toBytes();
+          final idx = indexOfCRLFCRLF(bytes);
+          if (idx < 0) {
+            if (bytes.length > 64 * 1024 && !handshakeDone.isCompleted) {
+              handshakeDone.completeError(
+                WsException('handshake response too large'),
+              );
+            }
+            return;
           }
-          return;
+          final head = String.fromCharCodes(bytes.sublist(0, idx));
+          if (!head.startsWith('HTTP/1.1 101')) {
+            handshakeDone.completeError(
+              WsException('bad handshake status: ${head.split('\r\n').first}'),
+            );
+            socket.destroy();
+            return;
+          }
+          handshakeDone.complete();
+          final rest = bytes.sublist(idx + 4);
+          if (rest.isNotEmpty) client._onData(rest);
+        } else {
+          client._onData(chunk);
         }
-        final head = String.fromCharCodes(bytes.sublist(0, idx));
-        if (!head.startsWith('HTTP/1.1 101')) {
-          handshakeDone.completeError(WsException(
-              'bad handshake status: ${head.split('\r\n').first}'));
-          socket.destroy();
-          return;
+      },
+      onError: (Object e) {
+        if (!handshakeDone.isCompleted) {
+          handshakeDone.completeError(WsException('socket error: $e'));
+        } else {
+          client._fail('socket error: $e');
         }
-        handshakeDone.complete();
-        final rest = bytes.sublist(idx + 4);
-        if (rest.isNotEmpty) client._onData(rest);
-      } else {
-        client._onData(chunk);
-      }
-    }, onError: (Object e) {
-      if (!handshakeDone.isCompleted) {
-        handshakeDone.completeError(WsException('socket error: $e'));
-      } else {
-        client._fail('socket error: $e');
-      }
-    }, onDone: () {
-      if (!handshakeDone.isCompleted) {
-        handshakeDone.completeError(WsException('closed during handshake'));
-      } else {
-        client._fail('connection closed');
-      }
-    }, cancelOnError: false);
+      },
+      onDone: () {
+        if (!handshakeDone.isCompleted) {
+          handshakeDone.completeError(WsException('closed during handshake'));
+        } else {
+          client._fail('connection closed');
+        }
+      },
+      cancelOnError: false,
+    );
 
     try {
       await handshakeDone.future.timeout(timeout);
@@ -168,7 +183,8 @@ class WsClient {
       head.add(l.buffer.asUint8List());
     }
     final mask = Uint8List.fromList(
-        List<int>.generate(4, (_) => _rand.nextInt(256)));
+      List<int>.generate(4, (_) => _rand.nextInt(256)),
+    );
     head.add(mask);
     final masked = Uint8List(len);
     for (int i = 0; i < len; i++) {
@@ -180,20 +196,23 @@ class WsClient {
 
   void _onData(Uint8List chunk) {
     if (_closed) return;
-    // 追加到缓冲区
-    if (_readPos == _buf.length) {
-      _buf = chunk;
+    final unread = _writePos - _readPos;
+    if (_writePos + chunk.length > _buf.length) {
+      var capacity = _buf.length;
+      while (capacity < unread + chunk.length) {
+        capacity *= 2;
+      }
+      final next = Uint8List(capacity);
+      next.setRange(0, unread, _buf, _readPos);
+      _buf = next;
       _readPos = 0;
-    } else {
-      final merged = Uint8List(_buf.length - _readPos + chunk.length);
-      merged.setRange(0, _buf.length - _readPos, _buf, _readPos);
-      merged.setRange(_buf.length - _readPos, merged.length, chunk);
-      _buf = merged;
-      _readPos = 0;
+      _writePos = unread;
     }
+    _buf.setRange(_writePos, _writePos + chunk.length, chunk);
+    _writePos += chunk.length;
 
     while (true) {
-      final avail = _buf.length - _readPos;
+      final avail = _writePos - _readPos;
       if (avail < 2) break;
       final b0 = _buf[_readPos];
       final b1 = _buf[_readPos + 1];
@@ -215,13 +234,20 @@ class WsClient {
       Uint8List maskKey = Uint8List(0);
       if (masked) {
         if (avail < offset + 4) break;
-        maskKey = Uint8List.sublistView(_buf, _readPos + offset, _readPos + offset + 4);
+        maskKey = Uint8List.sublistView(
+          _buf,
+          _readPos + offset,
+          _readPos + offset + 4,
+        );
         offset += 4;
       }
       if (avail < offset + payloadLen) break;
 
       final start = _readPos + offset;
-      final payload = Uint8List.sublistView(_buf, start, start + payloadLen);
+      // Stream delivery is asynchronous. Do not expose our reusable receive buffer.
+      final payload = Uint8List.fromList(
+        _buf.sublist(start, start + payloadLen),
+      );
       if (masked) {
         for (int i = 0; i < payloadLen; i++) {
           payload[i] ^= maskKey[i & 3];
@@ -249,14 +275,16 @@ class WsClient {
           }
           break;
         case 0x8: // close
-          _closed = true;
           try {
-            _sendFrame(0x8, payload.sublist(0, 0)); // 尽力应答
+            _sendFrame(0x8, payload); // 尽力应答
           } catch (_) {}
+          _closed = true;
           if (!_closes.isClosed) {
-            _closes.add(payload.length >= 2
-                ? 'closed code=${(payload[0] << 8) | payload[1]}'
-                : 'closed');
+            _closes.add(
+              payload.length >= 2
+                  ? 'closed code=${(payload[0] << 8) | payload[1]}'
+                  : 'closed',
+            );
           }
           _socket.destroy();
           if (!_messages.isClosed) _messages.close();
@@ -272,9 +300,9 @@ class WsClient {
     }
 
     // 压缩缓冲区
-    if (_readPos > 0 && (_readPos == _buf.length || _readPos > 64 * 1024)) {
-      _buf = Uint8List(0);
+    if (_readPos == _writePos) {
       _readPos = 0;
+      _writePos = 0;
     }
   }
 

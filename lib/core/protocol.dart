@@ -84,14 +84,23 @@ class KmMessage {
   static final Uint8List heartbeat = Uint8List.fromList([0x11, 0x11, 0x11]);
 
   /// 打开摄像头: 设备号, 画布(流)宽高, 采集宽高
-  static Uint8List openCamera(int deviceIndex, int canvasW, int canvasH,
-      int captureW, int captureH) {
+  static Uint8List openCamera(
+    int deviceIndex,
+    int canvasW,
+    int canvasH,
+    int captureW,
+    int captureH,
+  ) {
     return cmd(KmCmd.openCamera, [
       deviceIndex & 0xff,
-      canvasW >> 8 & 0xff, canvasW & 0xff,
-      canvasH >> 8 & 0xff, canvasH & 0xff,
-      captureW >> 8 & 0xff, captureW & 0xff,
-      captureH >> 8 & 0xff, captureH & 0xff,
+      canvasW >> 8 & 0xff,
+      canvasW & 0xff,
+      canvasH >> 8 & 0xff,
+      canvasH & 0xff,
+      captureW >> 8 & 0xff,
+      captureW & 0xff,
+      captureH >> 8 & 0xff,
+      captureH & 0xff,
     ]);
   }
 
@@ -99,18 +108,23 @@ class KmMessage {
   ///
   /// 包格式: [0x77,0x88,cmd, ...fixedHeader, pkgCount(2B), chunkLen(1B), pindex(2B), data(≤90)]
   /// 空 body 时发单包（pkg=1, chunk=0, pindex=0）。
-  static List<Uint8List> chunked(int command, List<int> fixedHeader,
-      Uint8List body) {
+  static List<Uint8List> chunked(
+    int command,
+    List<int> fixedHeader,
+    Uint8List body,
+  ) {
     final len = body.length;
     final packageCount = len == 0 ? 1 : (len / 90).ceil();
     final packets = <Uint8List>[];
     if (len == 0) {
-      packets.add(cmd(command, [
-        ...fixedHeader,
-        0, 1, // packageCount = 1
-        0, // chunkLen = 0
-        0, 0, // pindex = 0
-      ]));
+      packets.add(
+        cmd(command, [
+          ...fixedHeader,
+          0, 1, // packageCount = 1
+          0, // chunkLen = 0
+          0, 0, // pindex = 0
+        ]),
+      );
       return packets;
     }
     int offset = 0;
@@ -119,9 +133,11 @@ class KmMessage {
       final chunkLen = (len - offset) > 90 ? 90 : (len - offset);
       final head = cmd(command, [
         ...fixedHeader,
-        packageCount >> 8 & 0xff, packageCount & 0xff,
+        packageCount >> 8 & 0xff,
+        packageCount & 0xff,
         chunkLen,
-        pindex >> 8 & 0xff, pindex & 0xff,
+        pindex >> 8 & 0xff,
+        pindex & 0xff,
       ]);
       final pkt = Uint8List(head.length + chunkLen);
       pkt.setRange(0, head.length, head);
@@ -135,7 +151,9 @@ class KmMessage {
 
   /// 拍照。[savePath] 为空时仅取服务端返回的 base64 图像。
   static List<Uint8List> capture(String savePath) {
-    final pathBytes = savePath.isEmpty ? Uint8List(0) : _encodeUriBytes(savePath);
+    final pathBytes = savePath.isEmpty
+        ? Uint8List(0)
+        : _encodeUriBytes(savePath);
     final len = pathBytes.length;
     return chunked(KmCmd.capture, [
       0x00, // flag
@@ -143,33 +161,39 @@ class KmMessage {
     ], pathBytes);
   }
 
-  static Uint8List moveOffset(int px, int py, int xDir, int yDir) =>
-      cmd(KmCmd.moveOffset, [
-        px >> 8 & 0xff, px & 0xff,
-        py >> 8 & 0xff, py & 0xff,
-        xDir, yDir
-      ]);
+  static Uint8List moveOffset(int px, int py, int xDir, int yDir) => cmd(
+    KmCmd.moveOffset,
+    [px >> 8 & 0xff, px & 0xff, py >> 8 & 0xff, py & 0xff, xDir, yDir],
+  );
 
   static Uint8List setCutRect(int x, int y, int w, int h) =>
       cmd(KmCmd.setCutRect, [
-        x >> 8 & 0xff, x & 0xff,
-        y >> 8 & 0xff, y & 0xff,
-        w >> 8 & 0xff, w & 0xff,
-        h >> 8 & 0xff, h & 0xff
+        x >> 8 & 0xff,
+        x & 0xff,
+        y >> 8 & 0xff,
+        y & 0xff,
+        w >> 8 & 0xff,
+        w & 0xff,
+        h >> 8 & 0xff,
+        h & 0xff,
       ]);
 
   static Uint8List setCustomArea(int x1, int y1, int x2, int y2) =>
       cmd(KmCmd.setCustomArea, [
-        x1 >> 8 & 0xff, x1 & 0xff,
-        y1 >> 8 & 0xff, y1 & 0xff,
-        x2 >> 8 & 0xff, x2 & 0xff,
-        y2 >> 8 & 0xff, y2 & 0xff
+        x1 >> 8 & 0xff,
+        x1 & 0xff,
+        y1 >> 8 & 0xff,
+        y1 & 0xff,
+        x2 >> 8 & 0xff,
+        x2 & 0xff,
+        y2 >> 8 & 0xff,
+        y2 & 0xff,
       ]);
 
-  static Uint8List rotate(int angle) =>
-      cmd(KmCmd.rotate, [0x00, angle & 0x03]);
+  static Uint8List rotate(int angle) => cmd(KmCmd.rotate, [0x00, angle & 0x03]);
 
-  static Uint8List setZpMode(int mode) => cmd(KmCmd.setZpMode, [mode & 0xff]);
+  static Uint8List setZpMode(int mode) =>
+      cmd(KmCmd.setZpMode, [mode & 0xff, 0, 0, 0, 0, 0, 0]);
 
   /// 展平拍摄（书籍左右页）。头部: totalLen(3) + leftLen(3) + rightLen(3)
   static List<Uint8List> captureZp(String leftPath, String rightPath) {
@@ -178,24 +202,40 @@ class KmMessage {
     final body = Uint8List.fromList([...l, ...r]);
     final total = body.length;
     return chunked(KmCmd.captureZp, [
-      total >> 16 & 0xff, total >> 8 & 0xff, total & 0xff,
-      l.length >> 16 & 0xff, l.length >> 8 & 0xff, l.length & 0xff,
-      r.length >> 16 & 0xff, r.length >> 8 & 0xff, r.length & 0xff,
+      total >> 16 & 0xff,
+      total >> 8 & 0xff,
+      total & 0xff,
+      l.length >> 16 & 0xff,
+      l.length >> 8 & 0xff,
+      l.length & 0xff,
+      r.length >> 16 & 0xff,
+      r.length >> 8 & 0xff,
+      r.length & 0xff,
     ], body);
   }
 
   /// OCR (0xC2): 头部 languageIndex(1) + totalLen(3) + imgPathLen(3) + txtPathLen(3)，
   /// body = 图片路径 + 文本输出路径 拼接
-  static List<Uint8List> ocr(int languageIndex, String imgPath, String txtPath) {
+  static List<Uint8List> ocr(
+    int languageIndex,
+    String imgPath,
+    String txtPath,
+  ) {
     final img = _encodeUriBytes(imgPath);
     final txt = _encodeUriBytes(txtPath);
     final body = Uint8List.fromList([...img, ...txt]);
     final total = body.length;
     return chunked(KmCmd.ocrCall, [
       languageIndex & 0xff,
-      total >> 16 & 0xff, total >> 8 & 0xff, total & 0xff,
-      img.length >> 16 & 0xff, img.length >> 8 & 0xff, img.length & 0xff,
-      txt.length >> 16 & 0xff, txt.length >> 8 & 0xff, txt.length & 0xff,
+      total >> 16 & 0xff,
+      total >> 8 & 0xff,
+      total & 0xff,
+      img.length >> 16 & 0xff,
+      img.length >> 8 & 0xff,
+      img.length & 0xff,
+      txt.length >> 16 & 0xff,
+      txt.length >> 8 & 0xff,
+      txt.length & 0xff,
     ], body);
   }
 
@@ -204,7 +244,9 @@ class KmMessage {
     final body = _encodeUriBytes(path);
     final len = body.length;
     return chunked(command, [
-      len >> 16 & 0xff, len >> 8 & 0xff, len & 0xff,
+      len >> 16 & 0xff,
+      len >> 8 & 0xff,
+      len & 0xff,
     ], body);
   }
 
@@ -290,7 +332,8 @@ class KmOcr extends KmResponse {
 
 class KmIdCard extends KmResponse {
   final bool ok;
-  final List<String> fields; // name,sex,nation,born,address,cardNum,issuedAt,effectDate
+  final List<String>
+  fields; // name,sex,nation,born,address,cardNum,issuedAt,effectDate
   final List<Uint8List> images; // base64解码后的图
   KmIdCard(this.ok, this.fields, this.images);
 }
@@ -333,6 +376,17 @@ class KmParser {
     if (d.length < 3) return null;
     if (d[0] == 0x11 && d[1] == 0x11 && d[2] == 0x11) return KmHeartbeat();
     if (d[0] != 0x55 || d[1] != 0x66) return null;
+    if (d.length < 4) return null;
+    try {
+      return _parseResponse(d);
+    } on RangeError {
+      return null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  static KmResponse? _parseResponse(Uint8List d) {
     final cmd = d[2];
     switch (cmd) {
       case KmRes.devices:
@@ -340,7 +394,9 @@ class KmParser {
         final names = <String>[];
         if (count > 0 && d.length > 4) {
           final raw = String.fromCharCodes(d.sublist(4));
-          names.addAll(Uri.decodeFull(raw).split('|').where((s) => s.isNotEmpty));
+          names.addAll(
+            Uri.decodeFull(raw).split('|').where((s) => s.isNotEmpty),
+          );
         }
         return KmDevices(names);
 
@@ -356,17 +412,34 @@ class KmParser {
         return KmOpenStatus(d[3] == 0x01);
 
       case KmRes.captureResult:
+        // SDK 3.9: pathLen(2), b64Len(3), payload at byte 9.
+        // Some newer services use pathLen(3), payload at byte 10.
         if (d[3] != 0x01) return KmCaptureResult(false, '', null);
-        final pathLen = _be2(d, 4);
-        final b64Len = _be3(d, 6);
+        if (d.length < 9) return null;
+        var offset = 9;
+        var pathLen = _be2(d, 4);
+        var b64Len = _be3(d, 6);
+        if (offset + pathLen + b64Len != d.length) {
+          if (d.length < 10) return null;
+          offset = 10;
+          pathLen = _be3(d, 4);
+          b64Len = _be3(d, 7);
+          if (offset + pathLen + b64Len != d.length) return null;
+        }
         String path = '';
         if (pathLen > 0) {
-          path = Uri.decodeFull(String.fromCharCodes(d.sublist(9, 9 + pathLen)));
+          final raw = String.fromCharCodes(d.sublist(offset, offset + pathLen));
+          try {
+            path = Uri.decodeComponent(raw);
+          } catch (_) {
+            path = raw;
+          }
         }
         Uint8List? bytes;
-        if (b64Len > 0 && 9 + pathLen + b64Len <= d.length) {
+        if (b64Len > 0) {
           final b64 = String.fromCharCodes(
-              d.sublist(9 + pathLen, 9 + pathLen + b64Len));
+            d.sublist(offset + pathLen, offset + pathLen + b64Len),
+          );
           try {
             bytes = base64.decode(b64);
           } catch (_) {}
@@ -389,8 +462,7 @@ class KmParser {
         final ok = d[3] == 0x01;
         String content = '';
         if (ok && d.length > 4) {
-          content =
-              Uri.decodeFull(String.fromCharCodes(d.sublist(4)));
+          content = Uri.decodeFull(String.fromCharCodes(d.sublist(4)));
         }
         return KmBarcode(ok, content);
 
@@ -413,7 +485,8 @@ class KmParser {
         Uint8List? bytes;
         if (b64Len > 0 && 10 + pathLen + b64Len <= d.length) {
           final b64 = String.fromCharCodes(
-              d.sublist(10 + pathLen, 10 + pathLen + b64Len));
+            d.sublist(10 + pathLen, 10 + pathLen + b64Len),
+          );
           try {
             bytes = base64.decode(b64);
           } catch (_) {}
@@ -448,12 +521,14 @@ class KmParser {
         String path = '';
         Uint8List? bytes;
         if (pathLen > 0) {
-          path =
-              Uri.decodeFull(String.fromCharCodes(d.sublist(10, 10 + pathLen)));
+          path = Uri.decodeFull(
+            String.fromCharCodes(d.sublist(10, 10 + pathLen)),
+          );
         }
         if (b64Len > 0 && 10 + pathLen + b64Len <= d.length) {
           final b64 = String.fromCharCodes(
-              d.sublist(10 + pathLen, 10 + pathLen + b64Len));
+            d.sublist(10 + pathLen, 10 + pathLen + b64Len),
+          );
           try {
             bytes = base64.decode(b64);
           } catch (_) {}

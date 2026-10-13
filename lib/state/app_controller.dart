@@ -97,7 +97,13 @@ class AppController extends ChangeNotifier {
   ScanFileStore get _files => ScanFileStore(outputDir);
   bool get busy => capturing || exporting || recognizing;
   bool get canCapture =>
-      connected && previewOpen && !busy && !recording && !autoScan;
+      connected &&
+      previewOpen &&
+      !connecting &&
+      _opening == null &&
+      !busy &&
+      !recording &&
+      !autoScan;
   CapturedPage? get currentPage =>
       selectedPage >= 0 && selectedPage < pages.length
       ? pages[selectedPage]
@@ -299,8 +305,10 @@ class AppController extends ChangeNotifier {
       do {
         _openAgain = false;
         final r = resolution!;
-        if (previewOpen) await backend.close();
+        final wasOpen = previewOpen;
         previewOpen = false;
+        notifyListeners();
+        if (wasOpen) await backend.close();
         _canvasRgb = Uint8List(canvasW * canvasH * 3);
         await backend.open(
           deviceIndex: deviceIndex,
@@ -543,9 +551,7 @@ class AppController extends ChangeNotifier {
       ocrText: text,
     );
     pages.add(page);
-    selectedPage = pages.length - 1;
-    lastCapturePath = page.sourcePath;
-    notifyListeners();
+    _activatePage(pages.length - 1);
     unawaited(_makeThumbnail(page, bytes));
   }
 
@@ -687,7 +693,13 @@ class AppController extends ChangeNotifier {
 
   Future<void> _capture({required bool automatic, required bool book}) async {
     if (automatic
-        ? (!connected || !previewOpen || busy || recording || !autoScan)
+        ? (!connected ||
+              !previewOpen ||
+              connecting ||
+              _opening != null ||
+              busy ||
+              recording ||
+              !autoScan)
         : !canCapture) {
       return;
     }
@@ -881,29 +893,52 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> importPages(List<String> paths) async {
-    if (busy) return;
+    if (busy || paths.isEmpty) return;
     exporting = true;
     notifyListeners();
+    var imported = 0, skipped = 0;
+    final failed = <String>[];
+    String key(String path) {
+      final absolute = File(path).absolute.path.replaceAll('\\', '/');
+      return Platform.isWindows ? absolute.toLowerCase() : absolute;
+    }
+
+    final existing = pages.map((p) => key(p.filePath)).toSet();
     try {
       for (final path in paths) {
-        final bytes = await File(path).readAsBytes();
-        // Normalize for Flutter, native OCR and PDF (including TIFF/BMP).
-        final normalized = await compute(_encodeRaster, (
-          bytes,
-          OutputFormat.png,
-          95,
-        ));
-        final source = await _files.uniquePath(
-          '${basename(path)}_import',
-          '.png',
-          source: true,
-        );
-        await DocumentExporter.save(source, normalized);
-        await _addPage(path, normalized, sourcePath: source);
+        if (existing.contains(key(path))) {
+          skipped++;
+          continue;
+        }
+        try {
+          final bytes = await File(path).readAsBytes();
+          // Normalize for Flutter, native OCR and PDF (including TIFF/BMP).
+          final normalized = await compute(_encodeRaster, (
+            bytes,
+            OutputFormat.png,
+            95,
+          ));
+          final source = await _files.uniquePath(
+            '${basename(path)}_import',
+            '.png',
+            source: true,
+          );
+          await DocumentExporter.save(source, normalized);
+          await _addPage(path, normalized, sourcePath: source);
+          existing.add(key(path));
+          imported++;
+        } catch (e) {
+          failed.add(basename(path));
+          debugPrint('导入 ${basename(path)}：$e');
+        }
       }
-      statusMessage = '已导入 ${paths.length} 张图片';
-    } catch (e) {
-      _error('导入失败：$e');
+      final summary =
+          '已导入 $imported 张图片${skipped == 0 ? '' : '，跳过 $skipped 张已导入图片'}';
+      if (failed.isEmpty) {
+        statusMessage = summary;
+      } else {
+        _error('$summary；无法导入 ${failed.length} 张：${failed.join('、')}');
+      }
     } finally {
       exporting = false;
       notifyListeners();
@@ -1017,6 +1052,10 @@ class AppController extends ChangeNotifier {
 
   void selectPage(int index) {
     if (busy || index < 0 || index >= pages.length) return;
+    _activatePage(index);
+  }
+
+  void _activatePage(int index) {
     selectedPage = index;
     lastCapturePath = pages[index].sourcePath;
     lastOcrText = pages[index].ocrText;
@@ -1049,8 +1088,7 @@ class AppController extends ChangeNotifier {
     }
     final page = pages.removeAt(index);
     pages.insert(next, page);
-    selectedPage = next;
-    notifyListeners();
+    selectPage(next);
   }
 
   void setMode(ScanMode m) {

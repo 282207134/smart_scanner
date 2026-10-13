@@ -1,6 +1,6 @@
 // ignore_for_file: avoid_print
 
-// OCR 原始回包调试: dart run bin/ocr_debug.dart <图片路径>
+// OCR 原始回包调试: dart run tool/diagnostics/ocr_debug.dart <图片路径>
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -9,8 +9,11 @@ import 'package:smart_scanner/core/protocol.dart';
 import 'package:smart_scanner/core/ws_client.dart';
 
 Future<void> main(List<String> args) async {
-  final ws = await WsClient.connect('127.0.0.1', 22225,
-      timeout: const Duration(seconds: 3));
+  final ws = await WsClient.connect(
+    '127.0.0.1',
+    22225,
+    timeout: const Duration(seconds: 3),
+  );
   print('已连接');
 
   // 心跳
@@ -57,7 +60,9 @@ Future<void> main(List<String> args) async {
       await capWaiter.future.timeout(const Duration(seconds: 15));
     } catch (_) {}
     await sub0.cancel();
-    print('拍照: ${File(img).existsSync() ? '${File(img).lengthSync()} 字节' : '失败'}');
+    print(
+      '拍照: ${File(img).existsSync() ? '${File(img).lengthSync()} 字节' : '失败'}',
+    );
   }
   print('图片: $img');
   if (!File(img).existsSync()) {
@@ -70,14 +75,18 @@ Future<void> main(List<String> args) async {
     if (m.length < 3) return;
     final cmd = m[2];
     final head = m.length > 24 ? m.sublist(0, 24) : m;
-    print('[${DateTime.now().toIso8601String().substring(11, 19)}] '
-        'cmd=0x${cmd.toRadixString(16).padLeft(2, '0')} len=${m.length} '
-        'head=${head.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+    print(
+      '[${DateTime.now().toIso8601String().substring(11, 19)}] '
+      'cmd=0x${cmd.toRadixString(16).padLeft(2, '0')} len=${m.length} '
+      'head=${head.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}',
+    );
     if (cmd == 0xC2 && m.length > 4) {
       final r = KmParser.parse(Uint8List.fromList(m));
       if (r is KmOcr) {
-        print('   -> flag=${m[3]} progress=${m[4]} ok=${r.ok} '
-            'text=${r.text.length}字 ${r.text.isEmpty ? '' : r.text.substring(0, r.text.length > 40 ? 40 : r.text.length)}');
+        print(
+          '   -> flag=${m[3]} progress=${m[4]} ok=${r.ok} '
+          'text=${r.text.length}字 ${r.text.isEmpty ? '' : r.text.substring(0, r.text.length > 40 ? 40 : r.text.length)}',
+        );
         if (r.ok || m[3] != 1) {
           if (!done.isCompleted) done.complete();
         }

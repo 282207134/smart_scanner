@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:io';
+
 import 'package:smart_scanner/core/ws_client.dart';
 
 Future<void> main() async {
@@ -9,7 +10,9 @@ Future<void> main() async {
   final c = await WsClient.connect('127.0.0.1', 22225);
   stdout.writeln('connected');
   c.messages.listen((m) {
-    stdout.writeln('MSG len=${m.length} head=${m.take(8).map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+    stdout.writeln(
+      'MSG len=${m.length} head=${m.take(8).map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}',
+    );
   });
   c.closes.listen((w) => stdout.writeln('CLOSE $w'));
   stdout.writeln('sending 0x50...');

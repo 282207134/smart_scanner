@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:io';
+
 import 'package:smart_scanner/core/ws_client.dart';
 
 Future<void> main(List<String> args) async {
@@ -20,12 +21,17 @@ Future<void> main(List<String> args) async {
       fpsCount++;
       final elapsed = sw.elapsedMicroseconds / 1e6 - fpsWindow;
       if (elapsed >= 2.0) {
-        stdout.writeln('[fps] ${(fpsCount / elapsed).toStringAsFixed(1)} fps  (frame=${m.length}B)');
+        stdout.writeln(
+          '[fps] ${(fpsCount / elapsed).toStringAsFixed(1)} fps  (frame=${m.length}B)',
+        );
         fpsWindow = sw.elapsedMicroseconds / 1e6;
         fpsCount = 0;
       }
     } else if (msgCount <= 3) {
-      final head = m.take(12).map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+      final head = m
+          .take(12)
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join(' ');
       stdout.writeln('MSG#$msgCount len=${m.length} head=$head');
     }
   });
@@ -39,9 +45,18 @@ Future<void> main(List<String> args) async {
   final capW = args.length > 2 ? int.parse(args[2]) : 2592;
   final capH = args.length > 3 ? int.parse(args[3]) : 1944;
   c.sendBytes([
-    0x77, 0x88, 0x01, 0x00,
-    canvasW >> 8, canvasW & 0xff, canvasH >> 8, canvasH & 0xff,
-    capW >> 8, capW & 0xff, capH >> 8, capH & 0xff,
+    0x77,
+    0x88,
+    0x01,
+    0x00,
+    canvasW >> 8,
+    canvasW & 0xff,
+    canvasH >> 8,
+    canvasH & 0xff,
+    capW >> 8,
+    capW & 0xff,
+    capH >> 8,
+    capH & 0xff,
   ]);
   await Future.delayed(const Duration(seconds: 5));
   stdout.writeln('total msgs: $msgCount');

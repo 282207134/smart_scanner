@@ -1,6 +1,6 @@
 // ignore_for_file: avoid_print
 
-// OCR 参数变体探针: dart run bin/ocr_probe.dart
+// OCR 参数变体探针: dart run tool/diagnostics/ocr_probe.dart
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -29,10 +29,16 @@ Future<List<String>> collect(Duration window) async {
 
 Future<void> main() async {
   final dir = Directory.systemTemp.createTempSync('ocr_probe');
-  ws = await WsClient.connect('127.0.0.1', 22225,
-      timeout: const Duration(seconds: 3));
+  ws = await WsClient.connect(
+    '127.0.0.1',
+    22225,
+    timeout: const Duration(seconds: 3),
+  );
   ws.messages.listen(logMsg);
-  Timer.periodic(const Duration(seconds: 6), (_) => ws.sendBytes(KmMessage.heartbeat));
+  Timer.periodic(
+    const Duration(seconds: 6),
+    (_) => ws.sendBytes(KmMessage.heartbeat),
+  );
   print('已连接');
 
   // 开流并等待服务端确认
@@ -71,7 +77,9 @@ Future<void> main() async {
   }
   await sub2.cancel();
   await Future.delayed(const Duration(seconds: 1));
-  print('拍照: ${File(img).existsSync() ? '${File(img).lengthSync()}B' : '失败'}\n');
+  print(
+    '拍照: ${File(img).existsSync() ? '${File(img).lengthSync()}B' : '失败'}\n',
+  );
 
   // 变体1: language=0, txt 输出
   final out1 = '${dir.path}\\out1.txt';
@@ -81,7 +89,9 @@ Future<void> main() async {
     await Future.delayed(const Duration(milliseconds: 80));
   }
   print((await collect(const Duration(seconds: 25))).join('\n'));
-  print('输出文件: ${File(out1).existsSync() ? '${File(out1).lengthSync()}B' : '无'}\n');
+  print(
+    '输出文件: ${File(out1).existsSync() ? '${File(out1).lengthSync()}B' : '无'}\n',
+  );
 
   // 变体2: language=1
   final out2 = '${dir.path}\\out2.txt';
@@ -91,7 +101,9 @@ Future<void> main() async {
     await Future.delayed(const Duration(milliseconds: 80));
   }
   print((await collect(const Duration(seconds: 25))).join('\n'));
-  print('输出文件: ${File(out2).existsSync() ? '${File(out2).lengthSync()}B' : '无'}\n');
+  print(
+    '输出文件: ${File(out2).existsSync() ? '${File(out2).lengthSync()}B' : '无'}\n',
+  );
 
   // 变体3: 0xC4 OcrCallProEx (目录, 不删源) —— 把图放进目录
   if (!File(img).existsSync()) {

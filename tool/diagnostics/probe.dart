@@ -1,7 +1,7 @@
 // ignore_for_file: avoid_print
 
 // KHServer 协议冒烟测试
-// 运行: dart run bin/probe.dart
+// 运行: dart run tool/diagnostics/probe.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -20,7 +20,8 @@ void writeBmp(String path, Uint8List rgb, int w, int h) {
   final dataSize = rowStride * h;
   final buf = ByteData(54 + dataSize);
   final u8 = buf.buffer.asUint8List();
-  u8[0] = 0x42; u8[1] = 0x4D;
+  u8[0] = 0x42;
+  u8[1] = 0x4D;
   buf.setUint32(2, 54 + dataSize, Endian.little);
   buf.setUint32(10, 54, Endian.little);
   buf.setUint32(14, 40, Endian.little);
@@ -53,8 +54,7 @@ Future<void> main() async {
     exit(1);
   }
   final ctrl = StreamController<Uint8List>();
-  chan.messages.listen(ctrl.add,
-      onDone: () => stdout.writeln('[ws] closed'));
+  chan.messages.listen(ctrl.add, onDone: () => stdout.writeln('[ws] closed'));
   chan.closes.listen((why) => stdout.writeln('[ws] $why'));
 
   final frames = <Uint8List>[];
@@ -100,7 +100,9 @@ Future<void> main() async {
         break;
       case 0x01:
         opened = d[3] == 0x01;
-        stdout.writeln('[srv] open status: ${d[3] == 0x01 ? "OK" : "FAIL(${d[3]})"}');
+        stdout.writeln(
+          '[srv] open status: ${d[3] == 0x01 ? "OK" : "FAIL(${d[3]})"}',
+        );
         break;
       case 0x10:
         final flag = d[3];
@@ -108,9 +110,13 @@ Future<void> main() async {
           final pathLen = be2(d, 4);
           final b64Len = be3(d, 6);
           final path = pathLen > 0
-              ? Uri.decodeComponent(String.fromCharCodes(d.sublist(9, 9 + pathLen)))
+              ? Uri.decodeComponent(
+                  String.fromCharCodes(d.sublist(9, 9 + pathLen)),
+                )
               : '';
-          final b64 = String.fromCharCodes(d.sublist(9 + pathLen, 9 + pathLen + b64Len));
+          final b64 = String.fromCharCodes(
+            d.sublist(9 + pathLen, 9 + pathLen + b64Len),
+          );
           stdout.writeln('[srv] capture OK path="$path" b64Len=$b64Len');
           try {
             captureBytes = base64.decode(b64);
@@ -158,9 +164,18 @@ Future<void> main() async {
   // 3. 打开摄像头: canvas 640x480, 采集 2592x1944 (demo默认)
   const cw = 640, ch = 480, capW = 2592, capH = 1944;
   await send([
-    0x77, 0x88, 0x01, 0x00,
-    cw >> 8, cw & 0xff, ch >> 8, ch & 0xff,
-    capW >> 8, capW & 0xff, capH >> 8, capH & 0xff,
+    0x77,
+    0x88,
+    0x01,
+    0x00,
+    cw >> 8,
+    cw & 0xff,
+    ch >> 8,
+    ch & 0xff,
+    capW >> 8,
+    capW & 0xff,
+    capH >> 8,
+    capH & 0xff,
   ]);
   await Future.delayed(const Duration(milliseconds: 2500));
   if (!opened) {
@@ -169,14 +184,18 @@ Future<void> main() async {
     chan.close();
     exit(1);
   }
-  stdout.writeln('[preview] frames in 2.5s: $frameCount, total ${(frameBytes / 1048576).toStringAsFixed(2)} MB');
+  stdout.writeln(
+    '[preview] frames in 2.5s: $frameCount, total ${(frameBytes / 1048576).toStringAsFixed(2)} MB',
+  );
 
   // 分析帧结构
   for (final f in frames.take(3)) {
     if (f[2] == 0xcc && f.length > 11) {
       final w = be2(f, 3), h = be2(f, 5), x = be2(f, 7), y = be2(f, 9);
       final expect = w * h * 3 + 11;
-      stdout.writeln('[frame] ${w}x$h @($x,$y) bytes=${f.length} expect=$expect');
+      stdout.writeln(
+        '[frame] ${w}x$h @($x,$y) bytes=${f.length} expect=$expect',
+      );
     }
   }
 
@@ -211,7 +230,9 @@ Future<void> main() async {
   if (captureBytes != null) {
     File('probe_capture.bin').writeAsBytesSync(captureBytes!);
     final head = captureBytes!.sublist(0, 4);
-    stdout.writeln('[capture] ${captureBytes!.length} bytes, magic=${head.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}');
+    stdout.writeln(
+      '[capture] ${captureBytes!.length} bytes, magic=${head.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}',
+    );
   } else {
     stdout.writeln('!! 未收到拍照结果');
   }

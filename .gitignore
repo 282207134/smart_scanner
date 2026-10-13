@@ -33,6 +33,7 @@ migrate_working_dir/
 /build/
 /build_temp/
 /coverage/
+/tool/shot.png
 
 # Symbolication related
 app.*.symbols

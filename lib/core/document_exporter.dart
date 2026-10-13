@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -95,11 +96,21 @@ class DocumentExporter {
   ) {
     final image = img.decodeImage(bytes), mark = img.decodeImage(markBytes);
     if (image == null || mark == null) throw const FormatException('无法读取签名或印章');
+    final margin = math.min(
+      (image.width * .03).round(),
+      (math.min(image.width, image.height) - 1) ~/ 2,
+    );
+    final maxWidth = image.width - margin * 2;
+    final maxHeight = image.height - margin * 2;
+    final scale = math.min(
+      (image.width * size).round().clamp(1, maxWidth) / mark.width,
+      maxHeight / mark.height,
+    );
     final resized = img.copyResize(
       mark,
-      width: (image.width * size).round().clamp(1, image.width),
+      width: (mark.width * scale).round().clamp(1, maxWidth),
+      height: (mark.height * scale).round().clamp(1, maxHeight),
     );
-    final margin = (image.width * .03).round();
     final x = corner == 0 || corner == 2
         ? margin
         : image.width - resized.width - margin;

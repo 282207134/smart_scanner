@@ -169,4 +169,53 @@ void main() {
     expect(c.manualRegion, same(corners));
     c.capturing = false;
   });
+  test('证件两次拍摄只生成一份正反面合成，保留两份完整原图', () async {
+    final c = await setup();
+    c.setMode(ScanMode.idCard);
+    c.setCutMode(CutMode.none);
+    c.setMergeIdSides(true);
+    await c.capture();
+    expect(c.pages, isEmpty);
+    expect(c.statusMessage, contains('正面已拍摄'));
+    await c.capture();
+    expect(c.lastError, isNull);
+    expect(c.pages, hasLength(1));
+    final image = img.decodeImage(
+      await File(c.pages.single.filePath).readAsBytes(),
+    )!;
+    expect((image.width, image.height), (1080, 1520));
+    expect((c.backend as FixtureBackend).captures, 2);
+    expect(
+      Directory('${c.outputDir}/.sources')
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.contains('_original')),
+      hasLength(2),
+    );
+  });
+  test('合同签章改变实际输出像素，同时保留未加签章的采集原图', () async {
+    final c = await setup();
+    c.setMode(ScanMode.contract);
+    c.setCutMode(CutMode.none);
+    final mark = img.Image(width: 40, height: 20);
+    img.fill(mark, color: img.ColorRgb8(255, 0, 0));
+    c.setMark(Uint8List.fromList(img.encodePng(mark)), stamp: false);
+    await c.capture();
+    expect(c.lastError, isNull);
+    final output = img.decodeImage(
+      await File(c.pages.single.filePath).readAsBytes(),
+    )!;
+    final pixel = output.getPixel(870, 620);
+    expect(pixel.r, greaterThan(240));
+    expect(pixel.g, lessThan(25));
+    final original = Directory('${c.outputDir}/.sources')
+        .listSync()
+        .whereType<File>()
+        .singleWhere((f) => f.path.contains('_original'));
+    final untouched = img
+        .decodeImage(await original.readAsBytes())!
+        .getPixel(870, 620);
+    expect(untouched.r, lessThan(100));
+    expect(untouched.g, greaterThan(20));
+  });
 }

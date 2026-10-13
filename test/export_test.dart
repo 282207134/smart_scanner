@@ -70,4 +70,48 @@ void main() {
       throwsFormatException,
     );
   });
+  test('细长签章完整落在页面内并保留上下端，四个角都不截断', () {
+    final page = img.Image(width: 300, height: 200);
+    img.fill(page, color: img.ColorRgb8(255, 255, 255));
+    final mark = img.Image(width: 20, height: 400);
+    img.fill(mark, color: img.ColorRgb8(240, 10, 10));
+    img.fillRect(
+      mark,
+      x1: 0,
+      y1: 0,
+      x2: 19,
+      y2: 80,
+      color: img.ColorRgb8(0, 30, 240),
+    );
+    for (var corner = 0; corner < 4; corner++) {
+      final output = img.decodeImage(
+        DocumentExporter.addMark(
+          Uint8List.fromList(img.encodePng(page)),
+          Uint8List.fromList(img.encodePng(mark)),
+          .2,
+          corner,
+        ),
+      )!;
+      var red = 0, blue = 0;
+      var minX = output.width, minY = output.height, maxX = -1, maxY = -1;
+      for (final pixel in output) {
+        if (pixel.r > 200 && pixel.g < 80 && pixel.b < 80) red++;
+        if (pixel.b > 200 && pixel.r < 80) blue++;
+        if (pixel.g < 80) {
+          if (pixel.x < minX) minX = pixel.x;
+          if (pixel.x > maxX) maxX = pixel.x;
+          if (pixel.y < minY) minY = pixel.y;
+          if (pixel.y > maxY) maxY = pixel.y;
+        }
+      }
+      expect(red, greaterThan(0), reason: '签章下端丢失，角落 $corner');
+      expect(blue, greaterThan(0), reason: '签章上端丢失，角落 $corner');
+      expect(blue / red, closeTo(.25, .12), reason: '签章比例或范围被截断');
+      expect(
+        (maxX - minX + 1) / (maxY - minY + 1),
+        closeTo(.05, .01),
+        reason: '细长签章被压扁',
+      );
+    }
+  });
 }

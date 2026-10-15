@@ -2,7 +2,7 @@ name: smart_scanner
 description: "Windows 与 macOS 高拍仪扫描、文字识别及文档导出客户端。"
 publish_to: 'none'
 
-version: 1.2.1+4
+version: 1.2.2+5
 
 environment:
   sdk: ^3.13.5

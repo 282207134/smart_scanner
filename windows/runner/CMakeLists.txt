@@ -9,6 +9,7 @@ project(runner LANGUAGES CXX)
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "scanner_native.cpp"
+  "windows_camera.cpp"
   "main.cpp"
   "utils.cpp"
   "win32_window.cpp"
@@ -36,6 +37,7 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "windowsapp.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE mfplat mfreadwrite mfuuid mf windowscodecs strmiids)
 target_compile_options(${BINARY_NAME} PRIVATE /utf-8)
 target_compile_features(${BINARY_NAME} PRIVATE cxx_std_20)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")

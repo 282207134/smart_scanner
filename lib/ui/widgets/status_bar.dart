@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'dart:io';
-
 import '../../state/app_controller.dart';
 import '../../theme.dart';
 
@@ -55,7 +53,7 @@ class StatusBarWidget extends StatelessWidget {
               borderRadius: BorderRadius.circular(3),
             ),
             child: Text(
-              Platform.isMacOS || c.usingMock ? 'RGB' : 'MJPEG',
+              c.usesSystemCamera || c.usingMock ? 'RGB' : 'MJPEG',
               style: const TextStyle(fontSize: 12, color: AppColors.textDim),
             ),
           ),
@@ -109,7 +107,7 @@ class StatusBarWidget extends StatelessWidget {
               ),
             ),
           const Text(
-            'V1.2.1',
+            'V1.2.2',
             style: TextStyle(fontSize: 11, color: AppColors.textDim),
           ),
         ],

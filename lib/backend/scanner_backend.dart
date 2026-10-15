@@ -1,6 +1,6 @@
 /// 扫描仪后端抽象。
 ///
-/// Windows: KHServer WebSocket 协议 (KmServerBackend)
+/// Windows: Media Foundation (WindowsCameraBackend), optional KHServer
 /// macOS:   AVFoundation / Vision (MacAvfBackend)
 /// 离线:    MockBackend (无设备联调/UI开发)
 library;
@@ -9,7 +9,7 @@ import '../core/models.dart';
 import 'video_recorder.dart';
 
 abstract class ScannerBackend {
-  /// 连接后端（Windows: 连接 KHServer；macOS: 检查权限）
+  /// 连接系统摄像头，或用户选择的厂商服务。
   Future<void> connect();
 
   Future<void> disconnect();

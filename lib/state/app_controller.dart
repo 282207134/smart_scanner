@@ -11,7 +11,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../backend/km_server_backend.dart';
 import '../backend/mac_avf_backend.dart';
 import '../backend/mock_backend.dart';
+import '../backend/native_camera_backend.dart';
 import '../backend/scanner_backend.dart';
+import '../backend/windows_camera_backend.dart';
 import '../core/document_exporter.dart';
 import '../core/document_geometry.dart';
 import '../core/document_vision.dart';
@@ -29,6 +31,7 @@ class AppController extends ChangeNotifier {
   StreamSubscription<ScannerEvent>? _eventSub;
   bool _disposed = false, _testMode = false;
   bool connected = false, connecting = false, usingMock = false;
+  bool windowsVendorService = false;
   String statusMessage = '未连接';
   List<ScannerDevice> devices = const [];
   int deviceIndex = 0;
@@ -117,7 +120,8 @@ class AppController extends ChangeNotifier {
       ? pages[selectedPage]
       : null;
   (int, int) get canvasSize => (canvasW, canvasH);
-  bool get supportsHighDensityPreview => _backend is MacAvfBackend;
+  bool get supportsHighDensityPreview => _backend is NativeCameraBackend;
+  bool get usesSystemCamera => _backend is NativeCameraBackend;
   bool supportsResolution(ScanResolution size) =>
       resolutions.any((r) => r.width == size.width && r.height == size.height);
   List<OutputFormat> get availableFormats => switch (mode) {
@@ -171,14 +175,7 @@ class AppController extends ChangeNotifier {
     outputDir =
         outputDirOverride ??
         (outputDir.isEmpty ? await _defaultOutputDir() : outputDir);
-    _attach(
-      backendOverride ??
-          (forceMock
-              ? MockBackend()
-              : Platform.isMacOS
-              ? MacAvfBackend()
-              : KmServerBackend()),
-    );
+    _attach(backendOverride ?? (forceMock ? MockBackend() : _realBackend()));
   }
 
   void _attach(ScannerBackend b) {
@@ -187,6 +184,12 @@ class AppController extends ChangeNotifier {
     _frameSub = b.frames.listen(_onFrame);
     _eventSub = b.events.listen(_onEvent);
   }
+
+  ScannerBackend _realBackend() => Platform.isMacOS
+      ? MacAvfBackend()
+      : windowsVendorService
+      ? KmServerBackend()
+      : WindowsCameraBackend();
 
   Future<String> _defaultOutputDir() async {
     final base = await getApplicationDocumentsDirectory();
@@ -214,21 +217,44 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> useDemo(bool enabled) async {
-    if (busy || recording || autoScan) return;
+    if (busy || connecting || _opening != null || recording || autoScan) return;
+    await _switchBackend(enabled ? MockBackend() : _realBackend());
+  }
+
+  Future<void> useWindowsVendorService(bool enabled) async {
+    if (!Platform.isWindows ||
+        busy ||
+        connecting ||
+        _opening != null ||
+        recording ||
+        autoScan) {
+      return;
+    }
+    windowsVendorService = enabled;
+    await _switchBackend(_realBackend());
+    await _savePrefs();
+  }
+
+  Future<void> _switchBackend(ScannerBackend next) async {
+    connecting = true;
+    notifyListeners();
     await _frameSub?.cancel();
     await _eventSub?.cancel();
-    await _backend?.disconnect();
+    try {
+      await _backend?.disconnect();
+    } catch (e) {
+      _error('释放旧设备：$e');
+    }
     connected = previewOpen = false;
     devices = [];
     resolutions = [];
     resolution = null;
-    _attach(
-      enabled
-          ? MockBackend()
-          : Platform.isMacOS
-          ? MacAvfBackend()
-          : KmServerBackend(),
-    );
+    deviceIndex = 0;
+    _resetGeometry();
+    previewImage?.dispose();
+    previewImage = null;
+    _canvasRgb = null;
+    _attach(next);
     connecting = false;
     await connect();
   }
@@ -240,7 +266,7 @@ class AppController extends ChangeNotifier {
       previewOpen = false;
       resolution = null;
       resolutions = [];
-      statusMessage = '未发现扫描仪，请检查 USB 连接后刷新设备';
+      statusMessage = '未发现摄像头或扫描仪，请检查连接后刷新设备';
     } else {
       if (!devices.any((d) => d.index == deviceIndex)) {
         deviceIndex = devices.first.index;
@@ -326,7 +352,9 @@ class AppController extends ChangeNotifier {
         final wasOpen = previewOpen;
         previewOpen = false;
         notifyListeners();
-        if (wasOpen) await backend.close();
+        // System backends own reconfiguration; Windows can resize the canvas
+        // without restarting a healthy camera or repeating exposure settling.
+        if (wasOpen && backend is! NativeCameraBackend) await backend.close();
         _canvasRgb = Uint8List(canvasW * canvasH * 3);
         await backend.open(
           deviceIndex: deviceIndex,
@@ -1444,6 +1472,7 @@ class AppController extends ChangeNotifier {
   );
   Future<void> _loadPrefs() async {
     final p = await SharedPreferences.getInstance();
+    windowsVendorService = p.getBool('windowsVendorService') ?? false;
     outputDir = p.getString('outputDir') ?? '';
     if (Platform.isMacOS && p.containsKey('outputDirBookmark')) {
       try {
@@ -1500,6 +1529,7 @@ class AppController extends ChangeNotifier {
   Future<void> _savePrefs() async {
     if (_testMode) return;
     final p = await SharedPreferences.getInstance();
+    await p.setBool('windowsVendorService', windowsVendorService);
     await p.setString('outputDir', outputDir);
     await p.setString('prefix', prefix);
     await p.setInt('jpgQuality', jpgQuality);

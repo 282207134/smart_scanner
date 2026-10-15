@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
@@ -25,6 +27,36 @@ Future<void> showOutputSettingsDialog(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (Platform.isWindows) ...[
+                _row('设备接入', [
+                  Expanded(
+                    child: DropdownButton<bool>(
+                      value: c.windowsVendorService,
+                      isExpanded: true,
+                      items: const [
+                        DropdownMenuItem(
+                          value: false,
+                          child: Text('系统摄像头（内置 / USB）'),
+                        ),
+                        DropdownMenuItem(value: true, child: Text('厂商扫描仪服务')),
+                      ],
+                      onChanged:
+                          c.busy || c.connecting || c.recording || c.autoScan
+                          ? null
+                          : (value) async {
+                              if (value == null) return;
+                              final switching = c.useWindowsVendorService(
+                                value,
+                              );
+                              setState(() {});
+                              await switching;
+                              if (ctx.mounted) setState(() {});
+                            },
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 12),
+              ],
               _row('保存目录', [
                 Expanded(
                   child: Text(

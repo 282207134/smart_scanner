@@ -1,4 +1,5 @@
 #include "scanner_native.h"
+#include "windows_camera.h"
 #include <flutter/encodable_value.h>
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
@@ -31,8 +32,10 @@ std::string Argument(const flutter::EncodableMap& args, const char* key) {
 }
 
 void RegisterScannerNative(flutter::FlutterEngine* engine, HWND window) {
+  RegisterWindowsCamera(engine, window);
   channel = std::make_unique<flutter::MethodChannel<Value>>(engine->messenger(), "smart_scanner/native", &flutter::StandardMethodCodec::GetInstance());
   channel->SetMethodCallHandler([window](const flutter::MethodCall<Value>& call, std::unique_ptr<Result> result) {
+    if (HandleWindowsCameraCall(call, result)) return;
     if (call.method_name() != "ocr") { result->NotImplemented(); return; }
     const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
     if (!args) { result->Error("ARGUMENT", "缺少 OCR 参数"); return; }
@@ -70,6 +73,7 @@ void RegisterScannerNative(flutter::FlutterEngine* engine, HWND window) {
 }
 
 bool HandleScannerNativeMessage(UINT message, LPARAM lparam) {
+  if (HandleWindowsCameraMessage(message, lparam)) return true;
   if (message != kOcrComplete) return false;
   std::unique_ptr<Reply> reply(reinterpret_cast<Reply*>(lparam));
   if (reply->error.empty()) reply->result->Success(Value(reply->text));
@@ -79,6 +83,7 @@ bool HandleScannerNativeMessage(UINT message, LPARAM lparam) {
 
 void ShutdownScannerNative(HWND window) {
   if (channel) channel->SetMethodCallHandler(nullptr);
+  ShutdownWindowsCamera(window);
   for (auto& worker : workers) if (worker.joinable()) worker.join();
   workers.clear();
   MSG message;

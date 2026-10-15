@@ -67,6 +67,11 @@ struct View {
   // 0 compact, 1 maximized, 2 manual.
   int mode = 0;
   double zoom = 1, pan_x = 0, pan_y = 0;
+
+  void Resize(const Map& args) {
+    width = std::clamp(Number(args, "canvasW", 640), 1, 8192);
+    height = std::clamp(Number(args, "canvasH", 480), 1, 8192);
+  }
 };
 struct StreamState {
   std::mutex mutex;
@@ -82,6 +87,17 @@ struct StreamState {
   Value pending;
   Clock::time_point received{}, previewed{};
   ComPtr<IMFSourceReader> reader;
+
+  // Called while holding mutex, for both preview frames and stream errors.
+  void PostPreview() {
+    if (!posted) posted = PostMessage(window, kFrame, 0, 0) != 0;
+  }
+  void Fail(HRESULT status) {
+    error = status;
+    active = false;
+    PostPreview();
+    ready.notify_all();
+  }
 };
 
 // Rotate coordinates independently of the preview scale. Photos always retain
@@ -178,7 +194,7 @@ class ReaderCallback final : public IMFSourceReaderCallback {
               if (state->received - state->previewed >= std::chrono::milliseconds(83)) {
                 state->pending = Preview(state->latest, state->view);
                 state->previewed = state->received;
-                if (!state->posted) state->posted = PostMessage(state->window, kFrame, 0, 0) != 0;
+                state->PostPreview();
               }
             }
             if (is2d) buffer2d->Unlock2D(); else buffer->Unlock();
@@ -186,20 +202,18 @@ class ReaderCallback final : public IMFSourceReaderCallback {
         }
       }
       if (FAILED(status)) {
-        state->error = status;
-        state->active = false;
-        if (!state->posted) state->posted = PostMessage(state->window, kFrame, 0, 0) != 0;
-      } else { reader = state->reader; }
-      state->ready.notify_all();
+        state->Fail(status);
+      } else {
+        reader = state->reader;
+        state->ready.notify_all();
+      }
     }
     if (reader) {
       const HRESULT next = reader->ReadSample(kVideoStream, 0, nullptr, nullptr, nullptr, nullptr);
       if (FAILED(next)) {
         std::lock_guard<std::mutex> lock(state->mutex);
         if (state->active && state->generation == generation_) {
-          state->active = false; state->error = next;
-          if (!state->posted) state->posted = PostMessage(state->window, kFrame, 0, 0) != 0;
-          state->ready.notify_all();
+          state->Fail(next);
         }
       }
     }
@@ -338,7 +352,7 @@ class CameraWorker {
     return devices_[index];
   }
   flutter::EncodableList Resolutions(const Device& device) {
-    if (device.link == active_link_ && !formats_.empty()) return formats_;
+    if (device.link == formats_link_ && !formats_.empty()) return formats_;
     auto source = Source(device);
     flutter::EncodableList list;
     try {
@@ -357,7 +371,7 @@ class CameraWorker {
       }
     } catch (...) { source->Shutdown(); throw; }
     source->Shutdown();
-    active_link_ = device.link; formats_ = list;
+    formats_link_ = device.link; formats_ = list;
     return list;
   }
   void Focus(bool required) {
@@ -378,8 +392,7 @@ class CameraWorker {
     {
       std::lock_guard<std::mutex> lock(state->mutex);
       if (state->active && opened_link_ == device.link && state->width == width && state->height == height) {
-        state->view.width = std::clamp(Number(args, "canvasW", 640), 1, 8192);
-        state->view.height = std::clamp(Number(args, "canvasH", 480), 1, 8192);
+        state->view.Resize(args);
         return;
       }
     }
@@ -425,8 +438,7 @@ class CameraWorker {
       {
         std::lock_guard<std::mutex> lock(state->mutex);
         state->width = width; state->height = height; state->stride = static_cast<LONG>(stride);
-        state->view.width = std::clamp(Number(args, "canvasW", 640), 1, 8192);
-        state->view.height = std::clamp(Number(args, "canvasH", 480), 1, 8192);
+        state->view.Resize(args);
         state->reader = reader; state->active = true; state->previewed = {};
       }
       Focus(false);
@@ -487,7 +499,7 @@ class CameraWorker {
     throw std::runtime_error("不支持的相机操作");
   }
   std::vector<Device> devices_;
-  std::wstring active_link_;
+  std::wstring formats_link_;
   std::wstring opened_link_;
   flutter::EncodableList formats_;
   ComPtr<IMFMediaSource> source_;

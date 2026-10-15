@@ -9,7 +9,7 @@ try {
 
     & (Join-Path $PSScriptRoot 'refresh_opencv_windows.ps1')
 
-    & $Flutter test --no-pub --concurrency=1 test/protocol_test.dart test/ws_client_test.dart test/export_test.dart test/capture_processor_test.dart test/km_server_backend_test.dart test/document_vision_test.dart test/auto_scan_detector_test.dart test/document_capture_test.dart test/page_management_test.dart
+    & $Flutter test --no-pub --concurrency=1 test/protocol_test.dart test/ws_client_test.dart test/export_test.dart test/capture_processor_test.dart test/km_server_backend_test.dart test/native_camera_backend_test.dart test/document_vision_test.dart test/auto_scan_detector_test.dart test/document_capture_test.dart test/page_management_test.dart
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     # Separate UI results with a fresh Windows engine for each scenario.

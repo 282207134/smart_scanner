@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_scanner/backend/km_server_backend.dart';
-import 'package:smart_scanner/backend/windows_camera_backend.dart';
+import 'package:smart_scanner/backend/native_camera_backend.dart';
 import 'package:smart_scanner/core/models.dart';
 import 'package:smart_scanner/state/app_controller.dart';
 
@@ -14,14 +14,14 @@ void main() {
   const events = MethodChannel('smart_scanner/frames');
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-  late WindowsCameraBackend backend;
+  late NativeCameraBackend backend;
   late List<MethodCall> calls;
   late Directory output;
   final image = Uint8List.fromList([137, 80, 78, 71]);
 
   setUp(() async {
     output = await Directory.systemTemp.createTemp('native_camera_test');
-    backend = WindowsCameraBackend();
+    backend = NativeCameraBackend();
     calls = [];
     messenger.setMockMethodCallHandler(events, (_) async => null);
     messenger.setMockMethodCallHandler(native, (call) async {
@@ -132,7 +132,7 @@ void main() {
       outputDirOverride: output.path,
     );
     await controller.useDemo(false);
-    expect(controller.backend, isA<WindowsCameraBackend>());
+    expect(controller.backend, isA<NativeCameraBackend>());
     expect(controller.connected, isTrue);
     expect(controller.previewOpen, isTrue);
     expect(controller.usesSystemCamera, isTrue);

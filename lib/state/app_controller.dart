@@ -9,11 +9,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../backend/km_server_backend.dart';
-import '../backend/mac_avf_backend.dart';
 import '../backend/mock_backend.dart';
 import '../backend/native_camera_backend.dart';
 import '../backend/scanner_backend.dart';
-import '../backend/windows_camera_backend.dart';
 import '../core/document_exporter.dart';
 import '../core/document_geometry.dart';
 import '../core/document_vision.dart';
@@ -107,20 +105,15 @@ class AppController extends ChangeNotifier {
   ScannerBackend get backend => _backend!;
   ScanFileStore get _files => ScanFileStore(outputDir);
   bool get busy => capturing || exporting || recognizing || focusing;
-  bool get canCapture =>
-      connected &&
-      previewOpen &&
-      !connecting &&
-      _opening == null &&
-      !busy &&
-      !recording &&
-      !autoScan;
+  bool get canSwitchBackend =>
+      !busy && !connecting && _opening == null && !recording && !autoScan;
+  bool get canCapture => connected && previewOpen && canSwitchBackend;
   CapturedPage? get currentPage =>
       selectedPage >= 0 && selectedPage < pages.length
       ? pages[selectedPage]
       : null;
   (int, int) get canvasSize => (canvasW, canvasH);
-  bool get supportsHighDensityPreview => _backend is NativeCameraBackend;
+  bool get supportsHighDensityPreview => usesSystemCamera;
   bool get usesSystemCamera => _backend is NativeCameraBackend;
   bool supportsResolution(ScanResolution size) =>
       resolutions.any((r) => r.width == size.width && r.height == size.height);
@@ -185,11 +178,9 @@ class AppController extends ChangeNotifier {
     _eventSub = b.events.listen(_onEvent);
   }
 
-  ScannerBackend _realBackend() => Platform.isMacOS
-      ? MacAvfBackend()
-      : windowsVendorService
+  ScannerBackend _realBackend() => Platform.isWindows && windowsVendorService
       ? KmServerBackend()
-      : WindowsCameraBackend();
+      : NativeCameraBackend();
 
   Future<String> _defaultOutputDir() async {
     final base = await getApplicationDocumentsDirectory();
@@ -217,19 +208,12 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> useDemo(bool enabled) async {
-    if (busy || connecting || _opening != null || recording || autoScan) return;
+    if (!canSwitchBackend) return;
     await _switchBackend(enabled ? MockBackend() : _realBackend());
   }
 
   Future<void> useWindowsVendorService(bool enabled) async {
-    if (!Platform.isWindows ||
-        busy ||
-        connecting ||
-        _opening != null ||
-        recording ||
-        autoScan) {
-      return;
-    }
+    if (!Platform.isWindows || !canSwitchBackend) return;
     windowsVendorService = enabled;
     await _switchBackend(_realBackend());
     await _savePrefs();

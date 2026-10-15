@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:smart_scanner/backend/mac_avf_backend.dart';
+import 'package:smart_scanner/backend/native_camera_backend.dart';
 import 'package:smart_scanner/backend/mock_backend.dart';
 import 'package:smart_scanner/core/models.dart';
 import 'package:smart_scanner/state/app_controller.dart';
@@ -29,7 +29,7 @@ void main() {
       return null;
     });
     addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-    final backend = MacAvfBackend();
+    final backend = NativeCameraBackend();
     backend.setPreviewSize(true);
     backend.setPreviewSize(false);
     await Future<void>.delayed(Duration.zero);

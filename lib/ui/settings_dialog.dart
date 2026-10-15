@@ -40,8 +40,7 @@ Future<void> showOutputSettingsDialog(
                         ),
                         DropdownMenuItem(value: true, child: Text('厂商扫描仪服务')),
                       ],
-                      onChanged:
-                          c.busy || c.connecting || c.recording || c.autoScan
+                      onChanged: !c.canSwitchBackend
                           ? null
                           : (value) async {
                               if (value == null) return;

@@ -1,7 +1,7 @@
 /// 扫描仪后端抽象。
 ///
-/// Windows: Media Foundation (WindowsCameraBackend), optional KHServer
-/// macOS:   AVFoundation / Vision (MacAvfBackend)
+/// Windows / macOS: NativeCameraBackend (Media Foundation / AVFoundation)
+/// Windows optional: KHServer (KmServerBackend)
 /// 离线:    MockBackend (无设备联调/UI开发)
 library;
 

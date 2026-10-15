@@ -7,7 +7,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
-import 'package:smart_scanner/backend/windows_camera_backend.dart';
+import 'package:smart_scanner/backend/native_camera_backend.dart';
 import 'package:smart_scanner/core/document_exporter.dart';
 import 'package:smart_scanner/core/models.dart';
 
@@ -18,7 +18,7 @@ Future<void> main() async {
       home: Scaffold(body: Center(child: Text('正在验证 Windows 系统摄像头…'))),
     ),
   );
-  final backend = WindowsCameraBackend();
+  final backend = NativeCameraBackend();
   final directory = Directory(
     '${Directory.current.path}/build/validation/windows-camera',
   );

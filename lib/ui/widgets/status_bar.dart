@@ -22,6 +22,7 @@ class StatusBarWidget extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           _miniDropdown<int>(
+            key: const Key('device-menu'),
             value: c.devices.isEmpty ? null : c.deviceIndex,
             items: [
               for (final d in c.devices)
@@ -29,6 +30,7 @@ class StatusBarWidget extends StatelessWidget {
                   value: d.index,
                   child: Text(
                     d.name,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 12, color: AppColors.text),
                   ),
                 ),
@@ -64,6 +66,7 @@ class StatusBarWidget extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           _miniDropdown<String>(
+            key: const Key('resolution-menu'),
             value: c.resolution?.label,
             items: [
               for (final r in c.resolutions)
@@ -116,31 +119,59 @@ class StatusBarWidget extends StatelessWidget {
   }
 
   Widget _miniDropdown<T>({
+    required Key key,
     required T? value,
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?>? onChanged,
     required String hint,
   }) {
-    return Container(
-      height: 26,
-      width: 150,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      decoration: BoxDecoration(
-        color: AppColors.panel,
-        borderRadius: BorderRadius.circular(3),
-      ),
-      child: DropdownButton<T>(
-        value: value,
-        isDense: true,
-        isExpanded: true,
-        underline: const SizedBox.shrink(),
-        dropdownColor: AppColors.card,
-        hint: Text(
-          hint,
-          style: const TextStyle(fontSize: 12, color: AppColors.textDim),
+    final selected = items.where((item) => item.value == value).firstOrNull;
+    // Popup menus clamp to the viewport. DropdownButton aligns the selected
+    // row with this 26px control and can place a 48px row below the window.
+    return PopupMenuButton<T>(
+      key: key,
+      enabled: onChanged != null && items.isNotEmpty,
+      initialValue: selected?.value,
+      tooltip: '',
+      color: AppColors.card,
+      constraints: const BoxConstraints(minWidth: 150, maxWidth: 220),
+      onSelected: onChanged,
+      itemBuilder: (_) => [
+        for (final item in items)
+          PopupMenuItem<T>(
+            value: item.value,
+            enabled: item.enabled,
+            child: item.child,
+          ),
+      ],
+      child: Container(
+        height: 26,
+        width: 150,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        decoration: BoxDecoration(
+          color: AppColors.panel,
+          borderRadius: BorderRadius.circular(3),
         ),
-        items: items,
-        onChanged: onChanged,
+        child: Row(
+          children: [
+            Expanded(
+              child:
+                  selected?.child ??
+                  Text(
+                    hint,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textDim,
+                    ),
+                  ),
+            ),
+            const Icon(
+              Icons.arrow_drop_down,
+              size: 24,
+              color: AppColors.textDim,
+            ),
+          ],
+        ),
       ),
     );
   }

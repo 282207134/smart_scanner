@@ -47,7 +47,7 @@ macOS 打开相机时启用设备支持的自动对焦；左侧“手动对焦�
 - 条码/二维码接口已接入，但尚未使用清晰实物条码完成识别验收；Windows 系统摄像头暂未接入条码识别，需要该功能时选择厂商服务。身份证信息读取需要专用读卡器及厂商服务，普通摄像头可拍摄合并正反面。
 - 搜索文字 PDF、完整打印设置、手指消除、水印设置和原稿表格恢复尚未完成。
 - macOS 设备长期稳定性、OCR、目录授权恢复和其它处理流程仍需 Mac 实机验收，不能以 Windows 测试代替。
-- Windows 部分窗口测试进程仍偶发异常退出；Ctrl+S 实机导出尚未通过，请使用“导出 PDF”按钮。
+- Windows 使用 Dart 3.13 的调试构建已加入性能采样器闪退规避，保留热重载与调试。`flutter_tester` 不经过应用启动入口，仍受同一 SDK 缺陷影响；完整说明见验证记录。Ctrl+S 实机导出尚未通过，请使用“导出 PDF”按钮。
 
 详细验证结果和剩余项目见 [验证记录](docs/验证记录.md)。
 
@@ -69,6 +69,8 @@ flutter build macos --release
 macOS 本次使用 Flutter 3.47.7 / Dart 3.13.5、Xcode 26.0.1 和 CMake 4.4.4。项目 `.fvmrc` 固定 SDK，使用 `fvm install`、`fvm flutter pub get`、`fvm flutter build macos --release --no-pub` 构建，开发运行用 `fvm flutter run -d macos`。CMake 需在 PATH 中；缺少时可用 `brew install cmake` 安装。运行包位于 `build/macos/Build/Products/Release/smart_scanner.app`。首次启动在底部选择“USB相机”，避免使用 Mac 内置摄像头。
 
 真机脚本运行前关闭扫描客户端。`tool/test_windows.ps1` 包含静态检查、核心测试和各个窗口场景的独立测试进程；遇到失败即退出。演示启动参数为 `--mock`。
+
+Windows 调试闪退排查（2026-11-04）：当前 Flutter 3.47.7 / Dart 3.13.5 的崩溃地址已解析为 `dart::ProfilerNativeStackWalker::walk+0x40`，对应 [Dart #64627](https://github.com/dart-lang/sdk/issues/64627)。项目会在加载引擎前移除不安全的 CPU 采样选项；仅对 Dart 3.13 的 Debug/Profile 构建启用，Release 和 macOS 不受此改动影响。升级到包含修复的 Dart 3.14 后不再启用此规避。底部设备和分辨率菜单同时修复了展开时的窗口边界断言。继续使用普通的 `flutter run -d windows` 即可。
 
 新增 OpenCV 原生调用后，如果已有构建缓存提示找不到函数，先执行 `./tool/refresh_opencv_windows.ps1`，再测试或构建。它更新当前使用模块的 DLL 导出，保留已编译的 OpenCV 缓存；测试脚本也包含这一步。依赖的 AOT 导出清单会影响后续测试构建，不能把这种缓存失败当成算法通过。
 

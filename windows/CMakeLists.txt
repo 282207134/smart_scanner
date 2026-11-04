@@ -57,6 +57,21 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# Let the runner sanitize Dart 3.13's profiling switch before the engine's
+# private CRT snapshots the environment. Plugins also import flutter_windows,
+# so they must be delayed together. Release and fixed SDKs use normal loading.
+get_target_property(SCANNER_UNSAFE_DART_PROFILER ${BINARY_NAME}
+  SCANNER_UNSAFE_DART_PROFILER)
+if(SCANNER_UNSAFE_DART_PROFILER)
+  target_link_libraries(${BINARY_NAME} PRIVATE delayimp)
+  target_link_options(${BINARY_NAME} PRIVATE
+    "$<$<NOT:$<CONFIG:Release>>:/DELAYLOAD:flutter_windows.dll>")
+  foreach(plugin ${FLUTTER_PLUGIN_LIST})
+    target_link_options(${BINARY_NAME} PRIVATE
+      "$<$<NOT:$<CONFIG:Release>>:/DELAYLOAD:$<TARGET_FILE_NAME:${plugin}_plugin>>")
+  endforeach()
+endif()
+
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can

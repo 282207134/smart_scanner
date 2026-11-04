@@ -5,7 +5,49 @@
 #include <stdio.h>
 #include <windows.h>
 
+#include <algorithm>
+#include <cstdlib>
 #include <iostream>
+
+void DisableUnsafeDartProfiling() {
+  // The affected engine statically links its own CRT and snapshots the process
+  // environment when loaded. CMake delay-loads it and the plugin DLLs so this
+  // runs BEFORE that snapshot; changing the runner's CRT alone is insufficient.
+  const auto set = [](const std::string& key, const std::string& value) {
+    ::SetEnvironmentVariableA(key.c_str(), value.empty() ? nullptr : value.c_str());
+  };
+  const auto get = [](const std::string& key) {
+    const DWORD size = ::GetEnvironmentVariableA(key.c_str(), nullptr, 0);
+    if (!size) return std::string();
+    std::string value(size, '\0');
+    const DWORD length =
+        ::GetEnvironmentVariableA(key.c_str(), value.data(), size);
+    value.resize(length < size ? length : 0);
+    return value;
+  };
+  const int count = std::clamp(
+      std::atoi(get("FLUTTER_ENGINE_SWITCHES").c_str()), 0, 50);
+  std::vector<std::string> switches;
+  bool removed = false;
+  for (int i = 1; i <= count; ++i) {
+    auto value = get("FLUTTER_ENGINE_SWITCH_" + std::to_string(i));
+    if (value == "enable-dart-profiling" ||
+        value.rfind("enable-dart-profiling=", 0) == 0) {
+      removed = true;
+    } else if (!value.empty()) {
+      switches.push_back(std::move(value));
+    }
+  }
+  if (!removed) return;
+  for (int i = 1; i <= count; ++i) {
+    set("FLUTTER_ENGINE_SWITCH_" + std::to_string(i),
+        i <= static_cast<int>(switches.size()) ? switches[i - 1] : "");
+  }
+  set("FLUTTER_ENGINE_SWITCHES", std::to_string(switches.size()));
+  std::cerr << "Dart 3.13 Windows stability workaround: CPU sampling disabled "
+               "(dart-lang/sdk#64627). Hot reload and debugging remain enabled."
+            << std::endl;
+}
 
 void CreateAndAttachConsole() {
   if (::AllocConsole()) {

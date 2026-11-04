@@ -57,10 +57,12 @@ void main() {
         home: Scaffold(body: StatusBarWidget(controller: c)),
       ),
     );
-    final dropdown = tester.widget<DropdownButton<String>>(
-      find.byType(DropdownButton<String>),
+    final dropdown = tester.widget<PopupMenuButton<String>>(
+      find.byType(PopupMenuButton<String>),
     );
-    final items = dropdown.items!;
+    final items = dropdown
+        .itemBuilder(tester.element(find.byType(PopupMenuButton<String>)))
+        .cast<PopupMenuItem<String>>();
     expect(items.map((item) => item.value), [
       '4160×3120',
       '1024×768',
@@ -141,8 +143,9 @@ void main() {
     }
 
     List<String?> menu() => tester
-        .widget<DropdownButton<String>>(find.byType(DropdownButton<String>))
-        .items!
+        .widget<PopupMenuButton<String>>(find.byType(PopupMenuButton<String>))
+        .itemBuilder(tester.element(find.byType(PopupMenuButton<String>)))
+        .cast<PopupMenuItem<String>>()
         .map((item) => item.value)
         .toList();
 

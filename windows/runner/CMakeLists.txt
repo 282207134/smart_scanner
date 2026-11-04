@@ -40,6 +40,18 @@ target_link_libraries(${BINARY_NAME} PRIVATE "windowsapp.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE mfplat mfreadwrite mfuuid mf windowscodecs strmiids)
 target_compile_options(${BINARY_NAME} PRIVATE /utf-8)
 target_compile_features(${BINARY_NAME} PRIVATE cxx_std_20)
+
+# Dart 3.13's Windows native stack sampler can dereference an invalid frame
+# pointer (dart-lang/sdk#64627). Stop enabling it until the SDK contains the
+# Dart 3.14 fix. Scope this workaround to the affected SDK, not future engines.
+# The generated SDK path otherwise only exists in the sibling flutter scope.
+include("${FLUTTER_MANAGED_DIR}/ephemeral/generated_config.cmake")
+file(READ "${FLUTTER_ROOT}/bin/cache/dart-sdk/version" SCANNER_DART_VERSION)
+if(SCANNER_DART_VERSION MATCHES "^3\\.13\\.")
+  set_property(TARGET ${BINARY_NAME} PROPERTY SCANNER_UNSAFE_DART_PROFILER TRUE)
+  target_compile_definitions(${BINARY_NAME} PRIVATE
+    "$<$<NOT:$<CONFIG:Release>>:SCANNER_DISABLE_DART_PROFILING>")
+endif()
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.

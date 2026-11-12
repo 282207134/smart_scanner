@@ -248,6 +248,7 @@ class DocumentVision {
         if (request.cut != CutMode.multiImg && regions.isNotEmpty) {
           regions = [_largest(regions)];
         }
+        regions = [for (final region in regions) refine(source, region)];
       }
       final images = <Uint8List>[];
       if (regions.isEmpty) {
@@ -270,6 +271,177 @@ class DocumentVision {
     } finally {
       source.dispose();
     }
+  }
+
+  /// Detection runs on a ≤900px copy with blurred, dilated edges, which can
+  /// place corners a few percent outside small objects such as cards. Re-find
+  /// the object at full resolution around the coarse region and keep the
+  /// tighter outline only when it is clearly the same object.
+  static DocumentRegion refine(cv.Mat source, DocumentRegion coarse) {
+    final w = source.cols, h = source.rows;
+    final xs = coarse.corners.map((p) => p.x * w);
+    final ys = coarse.corners.map((p) => p.y * h);
+    final minX = xs.reduce(math.min), maxX = xs.reduce(math.max);
+    final minY = ys.reduce(math.min), maxY = ys.reduce(math.max);
+    final margin = math.max(maxX - minX, maxY - minY) * .06;
+    final left = (minX - margin).floor().clamp(0, w - 1);
+    final top = (minY - margin).floor().clamp(0, h - 1);
+    final right = (maxX + margin).ceil().clamp(left + 1, w);
+    final bottom = (maxY + margin).ceil().clamp(top + 1, h);
+    final roiW = right - left, roiH = bottom - top;
+    if (roiW < 32 || roiH < 32) return coarse;
+    final owned = <cv.Mat>[];
+    cv.Mat keep(cv.Mat m) {
+      owned.add(m);
+      return m;
+    }
+
+    try {
+      // Cut the region out with a pure translation; only the OpenCV functions
+      // already linked into the trimmed native library are used here.
+      final from = cv.VecPoint2f.generate(
+        4,
+        (i) => cv.Point2f(
+          (left + [0, roiW, roiW, 0][i]).toDouble(),
+          (top + [0, 0, roiH, roiH][i]).toDouble(),
+        ),
+      );
+      final to = cv.VecPoint2f.generate(
+        4,
+        (i) => cv.Point2f(
+          [0, roiW, roiW, 0][i].toDouble(),
+          [0, 0, roiH, roiH][i].toDouble(),
+        ),
+      );
+      final shift = keep(cv.getPerspectiveTransform2f(from, to));
+      from.dispose();
+      to.dispose();
+      final roi = keep(cv.warpPerspective(source, shift, (roiW, roiH)));
+      final gray = keep(cv.cvtColor(roi, cv.COLOR_BGR2GRAY));
+      final blurred = keep(cv.gaussianBlur(gray, (5, 5), 0));
+      final binary = keep(
+        cv.threshold(blurred, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU).$2,
+      );
+      final (contours, hierarchy) = cv.findContours(
+        binary,
+        cv.RETR_EXTERNAL,
+        cv.CHAIN_APPROX_SIMPLE,
+      );
+      try {
+        if (contours.isEmpty) return coarse;
+        var best = -1;
+        var bestArea = 0.0;
+        for (var i = 0; i < contours.length; i++) {
+          final area = cv.contourArea(contours[i]);
+          if (area > bestArea) {
+            bestArea = area;
+            best = i;
+          }
+        }
+        final contour = contours[best];
+        final hull = <(double, double)>[];
+        for (final p in contour) {
+          hull.add((p.x.toDouble(), p.y.toDouble()));
+          p.dispose();
+        }
+        final touchesBorder = hull.any(
+          (p) => p.$1 <= 1 || p.$2 <= 1 || p.$1 >= roiW - 2 || p.$2 >= roiH - 2,
+        );
+        // A bright background (or a darker document) fills the margin; the
+        // coarse outline is the better guess then.
+        if (touchesBorder || hull.length < 4) return coarse;
+
+        List<ScanPoint>? points;
+        final rotated = _minAreaRect(hull);
+        if (rotated.$2 > 0 && rotated.$2 / bestArea <= 1.04) {
+          // Nearly rectangular (a card seen from above): the rotated box is
+          // the outer edge even when the corners are rounded.
+          points = rotated.$1;
+        } else {
+          final perimeter = cv.arcLength(contour, true);
+          for (final epsilon in [.01, .02, .03, .05]) {
+            final poly = cv.approxPolyDP(contour, perimeter * epsilon, true);
+            try {
+              if (poly.length == 4 && cv.isContourConvex(poly)) {
+                points = [];
+                for (final p in poly) {
+                  points.add(ScanPoint(p.x.toDouble(), p.y.toDouble()));
+                  p.dispose();
+                }
+                break;
+              }
+            } finally {
+              poly.dispose();
+            }
+          }
+        }
+        if (points == null) return coarse;
+        final refined = DocumentRegion(
+          _order([
+            for (final p in points)
+              ScanPoint((p.x + left) / w, (p.y + top) / h),
+          ]),
+          confidence: coarse.confidence,
+        );
+        final ratio = refined.area / coarse.area;
+        if (!refined.valid ||
+            ratio < .75 ||
+            ratio > 1.02 ||
+            _angleQuality(refined.corners, w, h) < .45) {
+          return coarse;
+        }
+        return refined;
+      } finally {
+        contours.dispose();
+        hierarchy.dispose();
+      }
+    } catch (_) {
+      return coarse;
+    } finally {
+      for (final m in owned.reversed) {
+        m.dispose();
+      }
+    }
+  }
+
+  /// Smallest rotated rectangle around [points]; returns its corners and area.
+  static (List<ScanPoint>, double) _minAreaRect(List<(double, double)> points) {
+    final angles = <int>{};
+    for (var i = 0; i < points.length; i++) {
+      final a = points[i], b = points[(i + 1) % points.length];
+      final dx = b.$1 - a.$1, dy = b.$2 - a.$2;
+      if (dx == 0 && dy == 0) continue;
+      // Edge directions modulo 90°, in tenths of a degree.
+      angles.add(((math.atan2(dy, dx) * 1800 / math.pi) % 900).round() % 900);
+    }
+    var bestArea = double.infinity;
+    var corners = <ScanPoint>[];
+    for (final tenth in angles) {
+      final t = tenth * math.pi / 1800;
+      final c = math.cos(t), s = math.sin(t);
+      var minU = double.infinity, maxU = -double.infinity;
+      var minV = double.infinity, maxV = -double.infinity;
+      for (final p in points) {
+        final u = p.$1 * c + p.$2 * s, v = -p.$1 * s + p.$2 * c;
+        minU = math.min(minU, u);
+        maxU = math.max(maxU, u);
+        minV = math.min(minV, v);
+        maxV = math.max(maxV, v);
+      }
+      final area = (maxU - minU) * (maxV - minV);
+      if (area < bestArea) {
+        bestArea = area;
+        ScanPoint back(double u, double v) =>
+            ScanPoint(u * c - v * s, u * s + v * c);
+        corners = [
+          back(minU, minV),
+          back(maxU, minV),
+          back(maxU, maxV),
+          back(minU, maxV),
+        ];
+      }
+    }
+    return (corners, bestArea.isFinite ? bestArea : 0);
   }
 
   static cv.Mat warp(cv.Mat source, DocumentRegion region) {

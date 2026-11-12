@@ -8,6 +8,8 @@ Windows 已使用当前连接的 USB Camera 开发和实拍。macOS 已完成 Re
 
 Windows 运行包：`build/SmartScanner-Windows-1.2.2.zip`。解压完整文件夹后运行 `smart_scanner.exe`，保留 DLL 和 data 目录。构建输出在 `build_temp/windows/x64/runner/Release`。
 
+Mac 安装包：`build/SmartScanner-macOS-1.2.2.dmg`。打开后将 `smart_scanner.app` 拖入 Applications 文件夹。应用使用深蓝与金色的文档扫描图标，图标原稿及生成说明保留在 `assets/branding`。
+
 1. 连接摄像头或扫描仪后打开程序。Windows 默认使用“系统摄像头”，无需启动 KMServer；底部可选择内置或 USB 摄像头。需要厂商接口时，在输出设置的“设备接入”中选择“厂商扫描仪服务”，并启动 KMServer。接入方式会保存，切换时先释放旧设备。原装软件和本程序请分别运行，避免争用设备。
 2. 底部选择设备和分辨率，顶部设置裁切方式、输出效果、格式和文件名。
 3. 自动裁切会显示检测到的绿色文档边界。手动裁切可以拖动四角贴合倾斜纸张，也可以拖出新区域；双击恢复默认框。
@@ -64,6 +66,7 @@ dart run tool/hardware_test.dart
 flutter run -d windows --release -t tool/windows_camera_smoke.dart
 flutter build windows --release
 flutter build macos --release
+./tool/package_macos.sh
 ```
 
 macOS 本次使用 Flutter 3.47.7 / Dart 3.13.5、Xcode 26.0.1 和 CMake 4.4.4。项目 `.fvmrc` 固定 SDK，使用 `fvm install`、`fvm flutter pub get`、`fvm flutter build macos --release --no-pub` 构建，开发运行用 `fvm flutter run -d macos`。CMake 需在 PATH 中；缺少时可用 `brew install cmake` 安装。运行包位于 `build/macos/Build/Products/Release/smart_scanner.app`。首次启动在底部选择“USB相机”，避免使用 Mac 内置摄像头。

@@ -39,6 +39,12 @@ enum PreviewBounds {
 
 private enum PreviewSize { case compact, maximized, manual }
 
+private struct ScannerError: LocalizedError {
+  let message: String
+  init(_ message: String) { self.message = message }
+  var errorDescription: String? { message }
+}
+
 final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOutputSampleBufferDelegate {
   private let session = AVCaptureSession()
   private let queue = DispatchQueue(label: "smart_scanner.camera")
@@ -82,17 +88,17 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
       do {
         switch call.method {
         case "bookmarkFolder":
-          guard let path = args["path"] as? String else { throw NSError(domain: "缺少目录路径", code: 1) }
+          guard let path = args["path"] as? String else { throw ScannerError("缺少目录路径") }
           let url = URL(fileURLWithPath: path, isDirectory: true)
           let data = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
           self.folderAccess?.stopAccessingSecurityScopedResource()
           self.folderAccess = url.startAccessingSecurityScopedResource() ? url : nil
           self.reply(result, FlutterStandardTypedData(bytes: data))
         case "restoreFolder":
-          guard let data = args["bookmark"] as? FlutterStandardTypedData else { throw NSError(domain: "缺少目录授权", code: 1) }
+          guard let data = args["bookmark"] as? FlutterStandardTypedData else { throw ScannerError("缺少目录授权") }
           var stale = false
           let url = try URL(resolvingBookmarkData: data.data, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &stale)
-          guard url.startAccessingSecurityScopedResource() else { throw NSError(domain: "请重新选择保存目录", code: 1) }
+          guard url.startAccessingSecurityScopedResource() else { throw ScannerError("请重新选择保存目录") }
           self.folderAccess?.stopAccessingSecurityScopedResource(); self.folderAccess = url
           let refreshed = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
           self.reply(result, ["path": url.path, "bookmark": FlutterStandardTypedData(bytes: refreshed)])
@@ -101,7 +107,7 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
           self.reply(result, self.devices.map { ["name": $0.localizedName, "id": $0.uniqueID] })
         case "resolutions":
           let index = args["device"] as? Int ?? 0
-          guard self.devices.indices.contains(index) else { throw NSError(domain: "设备不存在", code: 1) }
+          guard self.devices.indices.contains(index) else { throw ScannerError("设备不存在") }
           var seen = Set<String>()
           let list = self.devices[index].formats.compactMap { format -> [String: Int]? in
             let dim = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
@@ -112,7 +118,7 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
           self.reply(result, list)
         case "open":
           let index = args["device"] as? Int ?? 0
-          guard self.devices.indices.contains(index) else { throw NSError(domain: "设备不存在", code: 1) }
+          guard self.devices.indices.contains(index) else { throw ScannerError("设备不存在") }
           if self.session.isRunning { self.session.stopRunning() }
           self.session.beginConfiguration()
           self.session.inputs.forEach { self.session.removeInput($0) }
@@ -120,20 +126,20 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
           let device = self.devices[index]
           do {
             let input = try AVCaptureDeviceInput(device: device)
-            guard self.session.canAddInput(input) else { throw NSError(domain: "无法打开摄像头", code: 1) }
+            guard self.session.canAddInput(input) else { throw ScannerError("无法打开摄像头") }
             self.session.addInput(input)
             if self.session.canSetSessionPreset(.high) { self.session.sessionPreset = .high }
             let output = AVCaptureVideoDataOutput()
             output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
             output.alwaysDiscardsLateVideoFrames = true
             output.setSampleBufferDelegate(self, queue: self.queue)
-            guard self.session.canAddOutput(output) else { throw NSError(domain: "无法开启视频输出", code: 1) }
+            guard self.session.canAddOutput(output) else { throw ScannerError("无法开启视频输出") }
             self.session.addOutput(output)
             let wantedWidth = args["width"] as? Int ?? 1920, wantedHeight = args["height"] as? Int ?? 1080
             guard let format = device.formats.first(where: {
               let dim = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
               return Int(dim.width) == wantedWidth && Int(dim.height) == wantedHeight
-            }) else { throw NSError(domain: "设备不支持所选分辨率", code: 1) }
+            }) else { throw ScannerError("设备不支持所选分辨率") }
             // macOS may change activeFormat when committing or starting the session.
             try device.lockForConfiguration()
             defer { device.unlockForConfiguration() }
@@ -148,7 +154,7 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
         case "close":
           if self.session.isRunning { self.session.stopRunning() }; self.latest = nil; self.reply(result, nil)
         case "capture", "captureRaw":
-          guard let image = self.latest else { throw NSError(domain: "请等待摄像头画面", code: 1) }
+          guard let image = self.latest else { throw ScannerError("请等待摄像头画面") }
           let processed: CIImage
           if call.method == "captureRaw" {
             let rotated = image.oriented(forExifOrientation: [1, 6, 3, 8][self.rotation % 4])
@@ -157,10 +163,10 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
             processed = try self.process(image, capture: true)
           }
           guard let cg = self.context.createCGImage(processed, from: processed.extent),
-                let bytes = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { throw NSError(domain: "图像编码失败", code: 1) }
+                let bytes = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { throw ScannerError("图像编码失败") }
           self.reply(result, FlutterStandardTypedData(bytes: bytes))
         case "ocr":
-          guard let path = args["path"] as? String else { throw NSError(domain: "缺少图片路径", code: 1) }
+          guard let path = args["path"] as? String else { throw ScannerError("缺少图片路径") }
           let language = args["language"] as? String ?? "zh-Hans"
           let url = URL(fileURLWithPath: path)
           if args["textLayout"] as? String == "vertical" {
@@ -170,13 +176,13 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
           let request = VNRecognizeTextRequest()
           request.recognitionLevel = .accurate; request.usesLanguageCorrection = true
           let supported = try VNRecognizeTextRequest.supportedRecognitionLanguages(for: .accurate, revision: request.revision)
-          guard supported.contains(language) else { throw NSError(domain: "当前 macOS 不支持所选识别语言，请更新系统或选择 English", code: 1) }
+          guard supported.contains(language) else { throw ScannerError("当前 macOS 不支持所选识别语言，请更新系统或选择 English") }
           request.recognitionLanguages = language == "zh-Hans" ? ["zh-Hans", "en-US"] : [language]
           try VNImageRequestHandler(url: url, options: [:]).perform([request])
           let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
           self.reply(result, text)
         case "barcode":
-          guard let image = self.latest, let cg = self.context.createCGImage(image, from: image.extent) else { throw NSError(domain: "没有摄像头画面", code: 1) }
+          guard let image = self.latest, let cg = self.context.createCGImage(image, from: image.extent) else { throw ScannerError("没有摄像头画面") }
           let request = VNDetectBarcodesRequest()
           if args["qr"] as? Bool == true { request.symbologies = [.qr] }
           try VNImageRequestHandler(cgImage: cg, options: [:]).perform([request])
@@ -203,11 +209,11 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
           case "removeBg": self.removeBg = value as? Bool ?? false
           case "smartEdge": self.smartEdge = value as? Bool ?? false
           case "focus":
-            guard self.session.isRunning, let input = self.session.inputs.first as? AVCaptureDeviceInput else { throw NSError(domain: "请先打开相机预览", code: 1) }
+            guard self.session.isRunning, let input = self.session.inputs.first as? AVCaptureDeviceInput else { throw ScannerError("请先打开相机预览") }
             let device = input.device
             try device.lockForConfiguration()
             defer { device.unlockForConfiguration() }
-            guard self.activateAutoFocus(on: device, restart: true) else { throw NSError(domain: "当前相机不支持自动对焦，请调整镜头或拍摄距离", code: 1) }
+            guard self.activateAutoFocus(on: device, restart: true) else { throw ScannerError("当前相机不支持自动对焦，请调整镜头或拍摄距离") }
           default: break
           }; self.reply(result, nil)
         default: self.reply(result, FlutterMethodNotImplemented)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../state/app_controller.dart';
 import '../../theme.dart';
+import '../../localization.dart';
 
 /// 左侧竖排工具栏
 class LeftToolbar extends StatelessWidget {
@@ -18,35 +19,47 @@ class LeftToolbar extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            _btn(Icons.rotate_90_degrees_ccw_outlined, '左旋90°', c.rotateLeft),
-            _btn(Icons.rotate_90_degrees_cw_outlined, '右旋90°', c.rotateRight),
-            _btn(Icons.zoom_in, '放大', c.zoomIn),
-            _btn(Icons.zoom_out, '缩小', c.zoomOut),
-            _btn(Icons.filter_1, '1:1 实际大小', c.trueSize),
+            _btn(
+              Icons.rotate_90_degrees_ccw_outlined,
+              context.tr('左旋90°'),
+              c.rotateLeft,
+            ),
+            _btn(
+              Icons.rotate_90_degrees_cw_outlined,
+              context.tr('右旋90°'),
+              c.rotateRight,
+            ),
+            _btn(Icons.zoom_in, context.tr('放大'), c.zoomIn),
+            _btn(Icons.zoom_out, context.tr('缩小'), c.zoomOut),
+            _btn(Icons.filter_1, context.tr('1:1 实际大小'), c.trueSize),
             const Divider(color: AppColors.divider, height: 16),
             _btn(
               Icons.auto_mode,
-              '自动扫描（连拍）',
+              context.tr('自动扫描（连拍）'),
               () => c.toggleAutoScan(),
               active: c.autoScan,
             ),
-            _btn(Icons.picture_as_pdf, '导出PDF', () => c.exportPdf()),
-            _btn(Icons.refresh, '刷新设备', () => c.refreshDevices()),
+            _btn(
+              Icons.picture_as_pdf,
+              context.tr('导出PDF'),
+              () => c.exportPdf(),
+            ),
+            _btn(Icons.refresh, context.tr('刷新设备'), () => c.refreshDevices()),
             const Divider(color: AppColors.divider, height: 16),
             _btn(
               Icons.zoom_in_map,
-              '缩小化视频区域',
+              context.tr('缩小化视频区域'),
               c.canCapture ? c.fitToWindow : null,
             ),
             _btn(
               Icons.center_focus_strong,
-              c.focusing ? '正在重新对焦…' : '手动对焦',
+              context.tr(c.focusing ? '正在重新对焦…' : '手动对焦'),
               c.canCapture ? c.manualFocus : null,
               active: c.focusing,
             ),
             _btn(
               Icons.zoom_out_map,
-              '最大化视频区域',
+              context.tr('最大化视频区域'),
               c.canCapture ? c.maximizePreview : null,
             ),
             const SizedBox(height: 8),

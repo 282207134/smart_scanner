@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../state/app_controller.dart';
 import '../../theme.dart';
+import '../../localization.dart';
 
 /// 底部状态栏（设备 / 视频格式 / 分辨率 / 状态 / 版本）
 class StatusBarWidget extends StatelessWidget {
@@ -16,8 +17,8 @@ class StatusBarWidget extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Row(
         children: [
-          const Text(
-            '设备',
+          Text(
+            context.tr('设备'),
             style: TextStyle(fontSize: 12, color: AppColors.textDim),
           ),
           const SizedBox(width: 6),
@@ -29,7 +30,7 @@ class StatusBarWidget extends StatelessWidget {
                 DropdownMenuItem(
                   value: d.index,
                   child: Text(
-                    d.name,
+                    context.tr(d.name),
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 12, color: AppColors.text),
                   ),
@@ -40,11 +41,11 @@ class StatusBarWidget extends StatelessWidget {
                 : (v) {
                     if (v != null) c.selectDevice(v);
                   },
-            hint: '未发现设备',
+            hint: context.tr('未发现设备'),
           ),
           const SizedBox(width: 18),
-          const Text(
-            '视频格式',
+          Text(
+            context.tr('视频格式'),
             style: TextStyle(fontSize: 12, color: AppColors.textDim),
           ),
           const SizedBox(width: 6),
@@ -60,8 +61,8 @@ class StatusBarWidget extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 18),
-          const Text(
-            '分辨率',
+          Text(
+            context.tr('分辨率'),
             style: TextStyle(fontSize: 12, color: AppColors.textDim),
           ),
           const SizedBox(width: 6),

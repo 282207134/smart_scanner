@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../core/models.dart';
 import '../state/app_controller.dart';
 import '../theme.dart';
+import '../localization.dart';
 import 'widgets/settings_bar.dart';
 
 /// 输出设置对话框
@@ -17,8 +18,9 @@ Future<void> showOutputSettingsDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setState) => AlertDialog(
-        title: const Text(
-          '输出设置',
+        scrollable: true,
+        title: Text(
+          ctx.tr('输出设置'),
           style: TextStyle(fontSize: 16, color: AppColors.text),
         ),
         content: SizedBox(
@@ -27,18 +29,43 @@ Future<void> showOutputSettingsDialog(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _row(ctx.tr('界面语言'), [
+                Expanded(
+                  child: DropdownButton<AppLanguage>(
+                    key: const Key('interface-language'),
+                    value: c.language,
+                    isExpanded: true,
+                    items: [
+                      for (final language in AppLanguage.values)
+                        DropdownMenuItem(
+                          value: language,
+                          child: Text(language.label),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      c.setInterfaceLanguage(value);
+                      setState(() {});
+                    },
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 12),
               if (Platform.isWindows) ...[
-                _row('设备接入', [
+                _row(ctx.tr('设备接入'), [
                   Expanded(
                     child: DropdownButton<bool>(
                       value: c.windowsVendorService,
                       isExpanded: true,
-                      items: const [
+                      items: [
                         DropdownMenuItem(
                           value: false,
-                          child: Text('系统摄像头（内置 / USB）'),
+                          child: Text(ctx.tr('系统摄像头（内置 / USB）')),
                         ),
-                        DropdownMenuItem(value: true, child: Text('厂商扫描仪服务')),
+                        DropdownMenuItem(
+                          value: true,
+                          child: Text(ctx.tr('厂商扫描仪服务')),
+                        ),
                       ],
                       onChanged: !c.canSwitchBackend
                           ? null
@@ -56,7 +83,7 @@ Future<void> showOutputSettingsDialog(
                 ]),
                 const SizedBox(height: 12),
               ],
-              _row('保存目录', [
+              _row(ctx.tr('保存目录'), [
                 Expanded(
                   child: Text(
                     c.outputDir,
@@ -74,16 +101,16 @@ Future<void> showOutputSettingsDialog(
                     foregroundColor: Colors.black,
                   ),
                   icon: const Icon(Icons.folder_open, size: 15),
-                  label: const Text('选择目录'),
+                  label: Text(ctx.tr('选择目录')),
                   onPressed: () async {
                     final dir = await getDirectoryPath();
                     if (dir != null) await c.setOutputDir(dir);
-                    setState(() {});
+                    if (ctx.mounted) setState(() {});
                   },
                 ),
               ]),
               const SizedBox(height: 12),
-              _row('命名方式', [
+              _row(ctx.tr('命名方式'), [
                 LabeledSelect<NameStyle>(
                   label: '',
                   value: c.nameStyle,
@@ -95,7 +122,7 @@ Future<void> showOutputSettingsDialog(
                 ),
               ]),
               const SizedBox(height: 12),
-              _row('默认格式', [
+              _row(ctx.tr('默认格式'), [
                 LabeledSelect<OutputFormat>(
                   label: '',
                   value: c.outputFormat,
@@ -106,12 +133,11 @@ Future<void> showOutputSettingsDialog(
                   },
                 ),
                 const SizedBox(width: 16),
-                const Text(
-                  'JPG画质',
+                Text(
+                  ctx.tr('JPG画质'),
                   style: TextStyle(fontSize: 13, color: AppColors.textDim),
                 ),
-                SizedBox(
-                  width: 140,
+                Expanded(
                   child: Slider(
                     value: c.jpgQuality.toDouble(),
                     min: 30,
@@ -128,8 +154,8 @@ Future<void> showOutputSettingsDialog(
                 ),
               ]),
               const SizedBox(height: 6),
-              const Text(
-                '拍摄与导出保存在所选目录。勾选、调整页面顺序后可导出 PDF；原图会保留。',
+              Text(
+                ctx.tr('拍摄与导出保存在所选目录。勾选、调整页面顺序后可导出 PDF；原图会保留。'),
                 style: TextStyle(fontSize: 11, color: AppColors.textDim),
               ),
             ],
@@ -138,7 +164,10 @@ Future<void> showOutputSettingsDialog(
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('关闭', style: TextStyle(color: AppColors.accent)),
+            child: Text(
+              ctx.tr('关闭'),
+              style: TextStyle(color: AppColors.accent),
+            ),
           ),
         ],
       ),
@@ -151,7 +180,7 @@ Widget _row(String label, List<Widget> children) {
     crossAxisAlignment: CrossAxisAlignment.center,
     children: [
       SizedBox(
-        width: 64,
+        width: 100,
         child: Text(
           label,
           style: const TextStyle(fontSize: 13, color: AppColors.textDim),

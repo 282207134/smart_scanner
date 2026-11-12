@@ -4,9 +4,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_scanner/backend/mock_backend.dart';
 import 'package:smart_scanner/core/models.dart';
 import 'package:smart_scanner/core/auto_scan_detector.dart';
+import 'package:smart_scanner/localization.dart';
+import 'package:smart_scanner/main.dart';
 import 'package:smart_scanner/state/app_controller.dart';
 import 'package:smart_scanner/theme.dart';
 import 'package:smart_scanner/ui/home_page.dart';
@@ -63,6 +66,78 @@ Future<AppController> pumpApp(
 }
 
 void main() {
+  testWidgets('设置内即时切换英日界面，保留日文 OCR 语言', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(960, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final c = AppController();
+    await c.init(
+      backendOverride: MockBackend(emitFrames: false),
+      outputDirOverride: Directory.systemTemp.path,
+    );
+    addTearDown(c.dispose);
+    c.setOcrLanguage(OcrLanguage.japanese);
+    await tester.pumpWidget(SmartScannerApp(controller: c));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('输出设置'));
+    await tester.pumpAndSettle();
+
+    for (final (language, setting, close, book) in [
+      (AppLanguage.english, 'App language', 'Close', 'Book'),
+      (AppLanguage.japanese, '表示言語', '閉じる', '書籍'),
+    ]) {
+      await tester.tap(find.byKey(const Key('interface-language')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(language.label).last);
+      await tester.pumpAndSettle();
+      expect(find.text(setting), findsOneWidget);
+      expect(c.ocrLanguage, OcrLanguage.japanese);
+      expect(c.statusMessage, language.translate('演示画面 · 不代表真实扫描仪'));
+      expect(tester.takeException(), isNull, reason: language.label);
+      await tester.tap(find.text(close));
+      await tester.pumpAndSettle();
+      expect(find.text(book), findsOneWidget);
+      for (final mode in ScanMode.values) {
+        c.setMode(mode);
+        await tester.pumpAndSettle();
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: '${language.code} ${mode.name}',
+        );
+      }
+      if (language == AppLanguage.english) {
+        await tester.tap(find.byTooltip('Output settings'));
+        await tester.pumpAndSettle();
+      }
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 400));
+  });
+
+  test('界面语言独立保存，重启后恢复', () async {
+    SharedPreferences.setMockInitialValues({
+      'ocrLanguage': OcrLanguage.japanese.index,
+    });
+    addTearDown(() => SharedPreferences.setMockInitialValues({}));
+    final c = AppController();
+    addTearDown(c.dispose);
+    await c.init(forceMock: true, outputDirOverride: Directory.systemTemp.path);
+    expect(c.language, AppLanguage.chinese);
+    await c.setInterfaceLanguage(AppLanguage.english);
+
+    SharedPreferences.resetStatic();
+    final reopened = AppController();
+    addTearDown(reopened.dispose);
+    await reopened.init(
+      forceMock: true,
+      outputDirOverride: Directory.systemTemp.path,
+    );
+    expect(reopened.language, AppLanguage.english);
+    expect(reopened.ocrLanguage, OcrLanguage.japanese);
+  });
+
   testWidgets('文档与书籍切换时，多页 PDF 和输出格式保持一致', (tester) async {
     final c = await pumpApp(tester);
     c.setMultiPage(true);

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../core/models.dart';
 import '../../state/app_controller.dart';
 import '../../theme.dart';
+import '../../localization.dart';
 
 class SettingsBar extends StatefulWidget {
   final AppController controller;
@@ -41,7 +42,7 @@ class _SettingsBarState extends State<SettingsBar> {
           children: [
             if (!video && !ocr && !book)
               _select(
-                '裁切方式',
+                context.tr('裁切方式'),
                 c.cutMode,
                 CutMode.values
                     .where(
@@ -53,7 +54,7 @@ class _SettingsBarState extends State<SettingsBar> {
               ),
             if (book)
               _select(
-                '展平方式',
+                context.tr('展平方式'),
                 c.flattenMode,
                 FlattenMode.values,
                 c.setFlattenMode,
@@ -61,7 +62,7 @@ class _SettingsBarState extends State<SettingsBar> {
               ),
             if (book && c.flattenMode == FlattenMode.singlePage)
               _select(
-                '扫描书页',
+                context.tr('扫描书页'),
                 c.bookPage,
                 BookPage.values,
                 c.setBookPage,
@@ -69,7 +70,7 @@ class _SettingsBarState extends State<SettingsBar> {
               ),
             if (book)
               _select(
-                '阅读顺序',
+                context.tr('阅读顺序'),
                 c.bookReadingOrder,
                 BookReadingOrder.values,
                 c.setBookReadingOrder,
@@ -79,13 +80,17 @@ class _SettingsBarState extends State<SettingsBar> {
               TextButton.icon(
                 onPressed: c.resetBookSeam,
                 icon: const Icon(Icons.center_focus_strong, size: 16),
-                label: Text(c.bookSeamManual ? '重新识别中线' : '自动识别中线'),
+                label: Text(
+                  c.bookSeamManual
+                      ? context.tr('重新识别中线')
+                      : context.tr('自动识别中线'),
+                ),
               ),
             if (c.mode == ScanMode.document ||
                 book ||
                 c.mode == ScanMode.barcode) ...[
               _select(
-                '扫描模式',
+                context.tr('扫描模式'),
                 c.autoMode,
                 const [false, true],
                 c.setAutoMode,
@@ -93,23 +98,23 @@ class _SettingsBarState extends State<SettingsBar> {
               ),
               if (c.autoMode)
                 _select(
-                  '静止倒计时',
+                  context.tr('静止倒计时'),
                   c.autoDelaySeconds,
                   List.generate(10, (i) => i + 1),
                   c.setAutoDelay,
-                  format: (v) => '$v 秒',
+                  format: (v) => context.tr('{0} 秒', [v]),
                 ),
             ],
             if (!video && !ocr)
               _select(
-                '输出效果',
+                context.tr('输出效果'),
                 c.colorEffect,
                 c.availableColorEffects,
                 c.setColorEffect,
               ),
             if (c.mode == ScanMode.document || book)
               _select(
-                '扫描页面',
+                context.tr('扫描页面'),
                 c.multiPage,
                 const [false, true],
                 c.setMultiPage,
@@ -117,20 +122,20 @@ class _SettingsBarState extends State<SettingsBar> {
               ),
             if (!video)
               _select(
-                '输出格式',
+                context.tr('输出格式'),
                 c.outputFormat,
                 c.availableFormats,
                 c.setOutputFormat,
               ),
             if (video) ...[
               _select(
-                '录制来源',
+                context.tr('录制来源'),
                 c.recordSource,
                 RecordSource.values,
                 c.setRecordSource,
               ),
               _select(
-                '录制格式',
+                context.tr('录制格式'),
                 c.recordFormat,
                 RecordFormat.values,
                 c.setRecordFormat,
@@ -142,14 +147,14 @@ class _SettingsBarState extends State<SettingsBar> {
                 c.mode != ScanMode.contract &&
                 c.mode != ScanMode.barcode)
               _select(
-                '识别语言',
+                context.tr('识别语言'),
                 c.ocrLanguage,
                 OcrLanguage.values,
                 c.setOcrLanguage,
               ),
             if (book || ocr)
               _select(
-                '文字方向',
+                context.tr('文字方向'),
                 c.ocrTextLayout,
                 OcrTextLayout.values,
                 c.setOcrTextLayout,
@@ -157,7 +162,7 @@ class _SettingsBarState extends State<SettingsBar> {
               ),
             if (!ocr)
               _select(
-                '命名方式',
+                context.tr('命名方式'),
                 c.nameStyle,
                 c.availableNameStyles,
                 c.setNameStyle,
@@ -166,8 +171,8 @@ class _SettingsBarState extends State<SettingsBar> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    '前缀',
+                  Text(
+                    context.tr('前缀'),
                     style: TextStyle(fontSize: 13, color: AppColors.textDim),
                   ),
                   const SizedBox(width: 8),
@@ -197,25 +202,25 @@ class _SettingsBarState extends State<SettingsBar> {
             if (c.mode == ScanMode.document ||
                 id ||
                 c.mode == ScanMode.contract)
-              _check('智能修边', c.smartEdge, c.setSmartEdge),
+              _check(context.tr('智能修边'), c.smartEdge, c.setSmartEdge),
             if (id) ...[
-              _check('正反面合并', c.mergeIdSides, c.setMergeIdSides),
+              _check(context.tr('正反面合并'), c.mergeIdSides, c.setMergeIdSides),
               if (!Platform.isMacOS)
                 TextButton.icon(
                   onPressed: c.connected ? c.readIdCard : null,
                   icon: const Icon(Icons.nfc, size: 16),
-                  label: const Text('读取身份证'),
+                  label: Text(context.tr('读取身份证')),
                 ),
             ],
             if (c.mode == ScanMode.barcode) ...[
-              _select('识别类型', c.qrcode, [false, true], (v) {
+              _select(context.tr('识别类型'), c.qrcode, [false, true], (v) {
                 c.qrcode = v;
                 c.notifyListeners();
               }, format: (v) => v ? '二维码' : '条码'),
               TextButton.icon(
                 onPressed: () => c.recognizeBarcode(qrcode: c.qrcode),
                 icon: const Icon(Icons.qr_code_scanner, size: 16),
-                label: const Text('开始识别'),
+                label: Text(context.tr('开始识别')),
               ),
               if (c.lastBarcode.isNotEmpty)
                 SizedBox(
@@ -233,22 +238,33 @@ class _SettingsBarState extends State<SettingsBar> {
               TextButton.icon(
                 onPressed: c.currentPage != null ? c.ocrLastCapture : null,
                 icon: const Icon(Icons.text_snippet_outlined, size: 16),
-                label: const Text('识别所选图片'),
+                label: Text(context.tr('识别所选图片')),
               ),
               TextButton.icon(
                 onPressed: c.lastOcrText.isNotEmpty ? c.exportOcr : null,
                 icon: const Icon(Icons.save_alt, size: 16),
-                label: const Text('导出文字'),
+                label: Text(context.tr('导出文字')),
               ),
             ],
             if (c.mode == ScanMode.contract) ...[
               _markButton(false),
               _markButton(true),
-              _select('签章位置', c.markCorner, [0, 1, 2, 3], (v) {
-                c.markCorner = v;
-                c.notifyListeners();
-              }, format: (v) => ['左上', '右上', '左下', '右下'][v]),
-              _select('签章尺寸', c.markSize, [.1, .2, .3, .4], (v) {
+              _select(
+                context.tr('签章位置'),
+                c.markCorner,
+                [0, 1, 2, 3],
+                (v) {
+                  c.markCorner = v;
+                  c.notifyListeners();
+                },
+                format: (v) => [
+                  context.tr('左上'),
+                  context.tr('右上'),
+                  context.tr('左下'),
+                  context.tr('右下'),
+                ][v],
+              ),
+              _select(context.tr('签章尺寸'), c.markSize, [.1, .2, .3, .4], (v) {
                 c.markSize = v;
                 c.notifyListeners();
               }, format: (v) => '${(v * 100).round()}%'),
@@ -265,9 +281,9 @@ class _SettingsBarState extends State<SettingsBar> {
       onPressed: () async {
         final file = await openFile(
           acceptedTypeGroups: [
-            const XTypeGroup(
-              label: '签名 / 印章图片',
-              extensions: ['png', 'jpg', 'jpeg', 'bmp'],
+            XTypeGroup(
+              label: context.tr('签名 / 印章图片'),
+              extensions: const ['png', 'jpg', 'jpeg', 'bmp'],
             ),
           ],
         );
@@ -277,7 +293,11 @@ class _SettingsBarState extends State<SettingsBar> {
         stamp ? Icons.approval_outlined : Icons.draw_outlined,
         size: 16,
       ),
-      label: Text('${active ? '更换' : '添加'}${stamp ? '印章' : '签名'}'),
+      label: Text(
+        context.tr(
+          stamp ? (active ? '更换印章' : '添加印章') : (active ? '更换签名' : '添加签名'),
+        ),
+      ),
     );
   }
 
@@ -360,7 +380,7 @@ class LabeledSelect<T> extends StatelessWidget {
               DropdownMenuItem(
                 value: it,
                 child: Text(
-                  format?.call(it) ?? _label(it),
+                  context.tr(format?.call(it) ?? _label(it)),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),

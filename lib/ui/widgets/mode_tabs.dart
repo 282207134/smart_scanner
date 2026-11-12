@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../core/models.dart';
 import '../../state/app_controller.dart';
 import '../../theme.dart';
+import '../../localization.dart';
 
 class ModeTabs extends StatelessWidget {
   final AppController controller;
@@ -32,9 +33,9 @@ class ModeTabs extends StatelessWidget {
                 onTap: () {
                   if (_disabled.contains(m)) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('该功能开发中'),
-                        duration: Duration(seconds: 2),
+                      SnackBar(
+                        content: Text(context.tr('该功能开发中')),
+                        duration: const Duration(seconds: 2),
                         behavior: SnackBarBehavior.floating,
                       ),
                     );
@@ -95,7 +96,7 @@ class _TabBtn extends StatelessWidget {
                 Icon(icon, size: 14, color: fg),
                 const SizedBox(width: 5),
                 Text(
-                  mode.label,
+                  context.tr(mode.label),
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,

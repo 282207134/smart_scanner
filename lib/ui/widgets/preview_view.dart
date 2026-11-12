@@ -11,6 +11,7 @@ import '../../core/document_geometry.dart';
 import '../../core/auto_scan_detector.dart';
 import '../../state/app_controller.dart';
 import '../../theme.dart';
+import '../../localization.dart';
 import 'preview_grid.dart';
 
 /// 预览区：帧渲染 + 叠加层（裁剪框/书脊线）+ 交互（滚轮缩放、拖拽平移/框选）
@@ -46,9 +47,9 @@ class _PreviewViewState extends State<PreviewView> {
             children: [
               Expanded(
                 child: page == null
-                    ? const Center(
+                    ? Center(
                         child: Text(
-                          '导入图片，或选择右侧已扫描页面',
+                          context.tr('导入图片，或选择右侧已扫描页面'),
                           style: TextStyle(color: AppColors.textDim),
                         ),
                       )
@@ -61,8 +62,8 @@ class _PreviewViewState extends State<PreviewView> {
                       ),
               ),
               const SizedBox(height: 12),
-              const Text(
-                '识别结果',
+              Text(
+                context.tr('识别结果'),
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
@@ -73,7 +74,7 @@ class _PreviewViewState extends State<PreviewView> {
                     c.ocrStatus.isNotEmpty
                         ? c.ocrStatus
                         : c.lastOcrText.isEmpty
-                        ? '选择识别语言后点击“识别文字”'
+                        ? context.tr('选择识别语言后点击“识别文字”')
                         : c.lastOcrText,
                     style: const TextStyle(fontSize: 13, height: 1.6),
                   ),
@@ -187,6 +188,7 @@ class _PreviewViewState extends State<PreviewView> {
                 children: [
                   CustomPaint(
                     painter: _PreviewPainter(
+                      language: AppLanguage.of(context),
                       image: img,
                       fitRect: fit,
                       mode: c.mode,
@@ -219,12 +221,12 @@ class _PreviewViewState extends State<PreviewView> {
                       _contentFit,
                     ),
                   if (c.previewOpen && !c.busy && c.cutMode == CutMode.manual)
-                    _hint('拖动四个角点贴合文件边缘；拖出新区域可重新框选'),
+                    _hint(context.tr('拖动四个角点贴合文件边缘；拖出新区域可重新框选')),
                   if (c.previewOpen && !c.busy && c.mode == ScanMode.book)
                     _hint(
                       c.bookSeamManual
-                          ? '手动中线 · 拖动虚线对齐书脊，或点击“重新识别中线”'
-                          : '自动识别书脊与书页边界 · 可拖动虚线手动调整',
+                          ? context.tr('手动中线 · 拖动虚线对齐书脊，或点击“重新识别中线”')
+                          : context.tr('自动识别书脊与书页边界 · 可拖动虚线手动调整'),
                     ),
                   if (c.previewOpen &&
                       !c.busy &&
@@ -232,10 +234,12 @@ class _PreviewViewState extends State<PreviewView> {
                           c.cutMode == CutMode.multiImg))
                     _hint(
                       c.detectedDocuments.isEmpty
-                          ? '正在寻找文件边界 · 请留出四周边缘'
+                          ? context.tr('正在寻找文件边界 · 请留出四周边缘')
                           : c.cutMode == CutMode.multiImg
-                          ? '识别到 ${c.detectedDocuments.length} 个文档 · 将分别保存'
-                          : '已检测到文件边界',
+                          ? context.tr('识别到 {0} 个文档 · 将分别保存', [
+                              c.detectedDocuments.length,
+                            ])
+                          : context.tr('已检测到文件边界'),
                     ),
                   if (c.autoScan)
                     Center(
@@ -265,12 +269,18 @@ class _PreviewViewState extends State<PreviewView> {
                                 ),
                               Text(
                                 c.capturing
-                                    ? '正在扫描…'
+                                    ? context.tr('正在扫描…')
                                     : switch (c.autoProgress.phase) {
-                                        AutoScanPhase.countdown => '画面已稳定，即将拍摄',
-                                        AutoScanPhase.captured => '本页已扫描，请更换文档',
-                                        AutoScanPhase.moving => '等待画面停止变化…',
-                                        _ => '等待文件和稳定画面…',
+                                        AutoScanPhase.countdown => context.tr(
+                                          '画面已稳定，即将拍摄',
+                                        ),
+                                        AutoScanPhase.captured => context.tr(
+                                          '本页已扫描，请更换文档',
+                                        ),
+                                        AutoScanPhase.moving => context.tr(
+                                          '等待画面停止变化…',
+                                        ),
+                                        _ => context.tr('等待文件和稳定画面…'),
                                       },
                                 style: const TextStyle(
                                   color: Colors.white,
@@ -382,6 +392,7 @@ class _PreviewViewState extends State<PreviewView> {
 class _PreviewPainter extends CustomPainter {
   final ui.Image? image;
   final Rect fitRect;
+  final AppLanguage language;
   final ScanMode mode;
   final CutMode cutMode;
   final Rect contentRect;
@@ -396,6 +407,7 @@ class _PreviewPainter extends CustomPainter {
   final String statusMessage;
 
   _PreviewPainter({
+    required this.language,
     required this.image,
     required this.fitRect,
     required this.mode,
@@ -481,8 +493,8 @@ class _PreviewPainter extends CustomPainter {
             regions[i],
             borderPaint,
             label: position == null
-                ? side?.label
-                : '${position + 1} · ${side!.label}',
+                ? (side == null ? null : language.translate(side.label))
+                : '${position + 1} · ${language.translate(side!.label)}',
           );
         }
         Offset point(ScanPoint p) => Offset(
@@ -627,8 +639,8 @@ class _PreviewPainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(
         text: connected
-            ? (previewOpen ? '等待画面...' : '正在打开摄像头...')
-            : '未连接扫描仪\n\n$statusMessage',
+            ? language.translate(previewOpen ? '等待画面...' : '正在打开摄像头...')
+            : '${language.translate('未连接扫描仪')}\n\n$statusMessage',
         style: const TextStyle(
           color: AppColors.textDim,
           fontSize: 15,
@@ -655,6 +667,7 @@ class _PreviewPainter extends CustomPainter {
       old.image != image ||
       old.fitRect != fitRect ||
       old.mode != mode ||
+      old.language != language ||
       old.cutMode != cutMode ||
       old.contentRect != contentRect ||
       old.regions != regions ||

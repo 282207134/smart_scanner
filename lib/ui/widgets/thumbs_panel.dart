@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/models.dart';
 import '../../state/app_controller.dart';
 import '../../theme.dart';
+import '../../localization.dart';
 
 class ThumbsPanel extends StatelessWidget {
   final AppController controller;
@@ -20,7 +21,7 @@ class ThumbsPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            '已扫描 ${c.pages.length} 页',
+            context.tr('已扫描 {0} 页', [c.pages.length]),
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
@@ -29,39 +30,45 @@ class ThumbsPanel extends StatelessWidget {
             icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
             label: Text(
               c.selectedPaths.isEmpty
-                  ? '导出PDF'
-                  : '导出所选 ${c.selectedPaths.length} 页',
+                  ? context.tr('导出PDF')
+                  : context.tr('导出所选 {0} 页', [c.selectedPaths.length]),
               style: const TextStyle(fontSize: 12),
             ),
           ),
           const SizedBox(height: 5),
           Expanded(
             child: c.pages.isEmpty
-                ? const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.photo_library_outlined,
-                          size: 36,
-                          color: AppColors.textDim,
-                        ),
-                        SizedBox(height: 14),
-                        Text(
-                          '拍摄或导入图片',
-                          style: TextStyle(fontSize: 13, color: AppColors.text),
-                        ),
-                        SizedBox(height: 6),
-                        Text(
-                          '在这里选择、排序\n并合成多页 PDF',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.6,
+                ? Center(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.photo_library_outlined,
+                            size: 36,
                             color: AppColors.textDim,
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 14),
+                          Text(
+                            context.tr('拍摄或导入图片'),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.text,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            context.tr('在这里选择、排序\n并合成多页 PDF'),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              height: 1.6,
+                              color: AppColors.textDim,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   )
                 : ListView.separated(
@@ -74,12 +81,15 @@ class ThumbsPanel extends StatelessWidget {
           TextButton.icon(
             onPressed: () => c.openFile(c.outputDir),
             icon: const Icon(Icons.folder_open, size: 16),
-            label: const Text('打开保存目录', style: TextStyle(fontSize: 12)),
+            label: Text(context.tr('打开保存目录'), style: TextStyle(fontSize: 12)),
           ),
           if (c.lastExportPath.isNotEmpty)
             TextButton(
               onPressed: () => c.openFile(c.lastExportPath),
-              child: const Text('查看刚导出的文件', style: TextStyle(fontSize: 12)),
+              child: Text(
+                context.tr('查看刚导出的文件'),
+                style: TextStyle(fontSize: 12),
+              ),
             ),
         ],
       ),
@@ -174,22 +184,22 @@ class ThumbsPanel extends StatelessWidget {
                     ),
                   _button(
                     Icons.arrow_upward,
-                    '向前移动',
+                    context.tr('向前移动'),
                     () => c.movePage(index, -1),
                   ),
                   _button(
                     Icons.arrow_downward,
-                    '向后移动',
+                    context.tr('向后移动'),
                     () => c.movePage(index, 1),
                   ),
                   _button(
                     Icons.open_in_new,
-                    '查看图片',
+                    context.tr('查看图片'),
                     () => _view(context, page),
                   ),
                   _button(
                     Icons.delete_outline,
-                    '移出列表（保留文件）',
+                    context.tr('移出列表（保留文件）'),
                     () => c.removePage(index),
                   ),
                 ],
@@ -245,7 +255,7 @@ class ThumbsPanel extends StatelessWidget {
                       File(page.sourcePath),
                       fit: BoxFit.contain,
                       errorBuilder: (_, _, _) =>
-                          const Center(child: Text('原始图片不存在')),
+                          Center(child: Text(ctx.tr('原始图片不存在'))),
                     ),
                   ),
                 ),
@@ -261,7 +271,7 @@ class ThumbsPanel extends StatelessWidget {
                   onPressed: () =>
                       controller.openFile(page.filePath, reveal: true),
                   icon: const Icon(Icons.folder_open, size: 16),
-                  label: const Text('在文件夹中显示'),
+                  label: Text(ctx.tr('在文件夹中显示')),
                 ),
               ],
             ),

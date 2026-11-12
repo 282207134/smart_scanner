@@ -7,6 +7,7 @@ import 'package:file_selector/file_selector.dart';
 
 import '../state/app_controller.dart';
 import '../theme.dart';
+import '../localization.dart';
 import 'settings_dialog.dart';
 import 'widgets/left_toolbar.dart';
 import 'widgets/mode_tabs.dart';
@@ -93,7 +94,7 @@ class _HomePageState extends State<HomePage> {
                     horizontal: 18,
                     vertical: 5,
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
                       Icon(
                         Icons.info_outline,
@@ -102,7 +103,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       SizedBox(width: 8),
                       Text(
-                        '演示模式 · 当前显示测试图案，拍摄内容为演示图片',
+                        context.tr('演示模式 · 当前显示测试图案，拍摄内容为演示图片'),
                         style: TextStyle(fontSize: 12, color: AppColors.accent),
                       ),
                     ],
@@ -146,26 +147,27 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           const SizedBox(width: 8),
-          const Text(
-            '智能高拍仪',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AppColors.text,
+          Expanded(
+            child: Text(
+              context.tr('智能高拍仪'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppColors.text,
+              ),
             ),
           ),
-          const SizedBox(width: 10),
-          _versionPill('扫描工作台', true),
-          const Spacer(),
           TextButton.icon(
             onPressed: c.busy
                 ? null
                 : () async {
                     final files = await openFiles(
                       acceptedTypeGroups: [
-                        const XTypeGroup(
-                          label: '图片',
-                          extensions: [
+                        XTypeGroup(
+                          label: context.tr('图片'),
+                          extensions: const [
                             'jpg',
                             'jpeg',
                             'png',
@@ -181,19 +183,19 @@ class _HomePageState extends State<HomePage> {
                     }
                   },
             icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
-            label: const Text('导入图片'),
+            label: Text(context.tr('导入图片')),
           ),
           TextButton.icon(
             onPressed: c.connecting ? null : () => c.connect(),
             icon: const Icon(Icons.refresh, size: 16),
-            label: Text(c.connecting ? '连接中' : '刷新设备'),
+            label: Text(context.tr(c.connecting ? '连接中' : '刷新设备')),
           ),
           PopupMenuButton<bool>(
-            tooltip: '切换设备来源',
+            tooltip: context.tr('切换设备来源'),
             onSelected: c.useDemo,
             itemBuilder: (_) => [
-              const PopupMenuItem(value: false, child: Text('真实扫描仪')),
-              const PopupMenuItem(value: true, child: Text('演示模式')),
+              PopupMenuItem(value: false, child: Text(context.tr('真实扫描仪'))),
+              PopupMenuItem(value: true, child: Text(context.tr('演示模式'))),
             ],
             icon: Icon(
               c.usingMock ? Icons.science_outlined : Icons.usb,
@@ -201,28 +203,10 @@ class _HomePageState extends State<HomePage> {
               color: AppColors.textDim,
             ),
           ),
-          _iconBtn(Icons.settings, '输出设置', () async {
+          _iconBtn(Icons.settings, context.tr('输出设置'), () async {
             if (context.mounted) await showOutputSettingsDialog(context, c);
           }),
         ],
-      ),
-    );
-  }
-
-  Widget _versionPill(String text, bool active) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      decoration: BoxDecoration(
-        color: active ? AppColors.accent : AppColors.card,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: active ? Colors.black : AppColors.textDim,
-        ),
       ),
     );
   }

@@ -19,6 +19,7 @@ import '../core/auto_scan_detector.dart';
 import '../core/models.dart';
 import '../core/native_ocr.dart';
 import '../core/scan_file_store.dart';
+import '../localization.dart';
 
 Uint8List _encodeRaster((Uint8List, OutputFormat, int) args) =>
     DocumentExporter.encodeImage(args.$1, args.$2, args.$3);
@@ -30,13 +31,33 @@ class AppController extends ChangeNotifier {
   bool _disposed = false, _testMode = false;
   bool connected = false, connecting = false, usingMock = false;
   bool windowsVendorService = false;
-  String statusMessage = '未连接';
+  AppMessage _status = const AppMessage('未连接');
+  AppMessage? _lastError;
+  AppMessage? _ocrStatus;
+  String get statusMessage => _status.resolve(language);
+  String? get lastError => _lastError?.resolve(language);
+  String get ocrStatus => _ocrStatus?.resolve(language) ?? '';
+
+  void _setStatus(String text, [List<Object?> values = const []]) {
+    _status = AppMessage(text, values);
+  }
+
   List<ScannerDevice> devices = const [];
   int deviceIndex = 0;
   List<ScanResolution> resolutions = const [];
   ScanResolution? resolution;
   final Map<String, String> _deviceResolutions = {};
   SharedPreferences? _prefs;
+  final _interfaceLanguage = ValueNotifier(AppLanguage.chinese);
+  ValueListenable<AppLanguage> get interfaceLanguage => _interfaceLanguage;
+  AppLanguage get language => _interfaceLanguage.value;
+
+  Future<void> setInterfaceLanguage(AppLanguage value) async {
+    if (_disposed || value == language) return;
+    _interfaceLanguage.value = value;
+    await _prefs?.setString('interfaceLanguage', value.code);
+  }
+
   bool previewOpen = false;
   ScanMode mode = ScanMode.document;
   CutMode cutMode = CutMode.none;
@@ -70,8 +91,7 @@ class AppController extends ChangeNotifier {
   String lastCapturePath = '',
       lastExportPath = '',
       lastBarcode = '',
-      lastOcrText = '',
-      ocrStatus = '';
+      lastOcrText = '';
   IdCardEvent? lastIdCard;
   bool recording = false;
   RecordFormat recordFormat = RecordFormat.mp4;
@@ -81,7 +101,6 @@ class AppController extends ChangeNotifier {
   Uint8List? signatureBytes, stampBytes, _idFront;
   double markSize = .2;
   int markCorner = 3;
-  String? lastError;
   Timer? _canvasTimer;
   (int, int)? _pendingCanvasSize;
   Timer? _recordTimer;
@@ -196,7 +215,7 @@ class AppController extends ChangeNotifier {
   Future<void> connect() async {
     if (connecting || busy || recording) return;
     connecting = true;
-    statusMessage = '正在连接扫描仪…';
+    _setStatus('正在连接扫描仪…');
     notifyListeners();
     try {
       await backend.connect();
@@ -204,7 +223,7 @@ class AppController extends ChangeNotifier {
       await _refreshDevices();
     } catch (e) {
       connected = false;
-      _error('连接失败：$e');
+      _error('连接失败：{0}', [e]);
     } finally {
       connecting = false;
       notifyListeners();
@@ -231,7 +250,7 @@ class AppController extends ChangeNotifier {
     try {
       await _backend?.disconnect();
     } catch (e) {
-      _error('释放旧设备：$e');
+      _error('释放旧设备：{0}', [e]);
     }
     connected = previewOpen = false;
     devices = [];
@@ -254,7 +273,7 @@ class AppController extends ChangeNotifier {
     try {
       await _refreshDevices();
     } catch (e) {
-      _error('刷新设备失败：$e');
+      _error('刷新设备失败：{0}', [e]);
     } finally {
       connecting = false;
       notifyListeners();
@@ -271,7 +290,7 @@ class AppController extends ChangeNotifier {
       resolution = null;
       resolutions = [];
       await _closePreviewWithoutResolution();
-      statusMessage = '未发现摄像头或扫描仪，请检查连接后刷新设备';
+      _setStatus('未发现摄像头或扫描仪，请检查连接后刷新设备');
     } else {
       final selected = devices
           .where((device) => _resolutionKey(device) == previousKey)
@@ -357,7 +376,7 @@ class AppController extends ChangeNotifier {
       await _loadResolutions(index);
       await reopenPreview();
     } catch (e) {
-      _error('切换设备失败：$e');
+      _error('切换设备失败：{0}', [e]);
     } finally {
       connecting = false;
       notifyListeners();
@@ -367,7 +386,7 @@ class AppController extends ChangeNotifier {
   Future<void> selectResolution(ScanResolution r) async {
     if (busy || connecting || recording || autoScan) return;
     if (!supportsResolution(r)) {
-      _error('当前设备不支持 ${r.label}');
+      _error('当前设备不支持 {0}', [r.label]);
       return;
     }
     _resetGeometry();
@@ -417,10 +436,10 @@ class AppController extends ChangeNotifier {
         );
         previewOpen = true;
         _applySettings();
-        statusMessage = usingMock ? '演示画面 · 不代表真实扫描仪' : '预览中 ${r.label}';
+        _setStatus(usingMock ? '演示画面 · 不代表真实扫描仪' : '预览中 {0}', [r.label]);
       } while (_openAgain && !_disposed && !busy && !recording);
     } catch (e) {
-      _error('打开摄像头失败：$e');
+      _error('打开摄像头失败：{0}', [e]);
     } finally {
       _opening = null;
       done.complete();
@@ -625,7 +644,7 @@ class AppController extends ChangeNotifier {
           previewOpen = false;
           _stopLocalAuto();
         }
-        statusMessage = detail;
+        _setStatus(detail);
       case CaptureEvent(:final ok, :final path, :final imageBytes):
         if (ok && !capturing && path.isNotEmpty) {
           unawaited(_addPage(path, imageBytes));
@@ -638,16 +657,16 @@ class AppController extends ChangeNotifier {
       ):
         if (done && _autoDetector == null) {
           autoScan = false;
-          statusMessage = '自动扫描已停止';
+          _setStatus('自动扫描已停止');
         } else if (_autoDetector == null && steady && path.isNotEmpty) {
           unawaited(_addPage(path, imageBytes));
-          statusMessage = '自动拍摄：${basename(path)}';
+          _setStatus('自动拍摄：{0}', [basename(path)]);
         }
       case BarcodeEvent(:final ok, :final content):
         lastBarcode = ok ? content : '';
-        statusMessage = ok ? '识别结果：$content' : '未识别到条码，请调整位置或光线';
+        _setStatus(ok ? '识别结果：{0}' : '未识别到条码，请调整位置或光线', [content]);
       case OcrEvent(:final flag, :final progress):
-        if (flag == 1) ocrStatus = 'OCR 识别中 $progress%';
+        if (flag == 1) _ocrStatus = AppMessage('OCR 识别中 {0}%', [progress]);
       case IdCardEvent(:final ok):
         lastIdCard = ok ? ev : null;
       default:
@@ -657,14 +676,13 @@ class AppController extends ChangeNotifier {
   }
 
   static String basename(String path) => ScanFileStore.basename(path);
-  void _error(String message) {
-    lastError = message;
-    statusMessage = message;
+  void _error(String text, [List<Object?> values = const []]) {
+    _status = _lastError = AppMessage(text, values);
     notifyListeners();
   }
 
   void clearError() {
-    lastError = null;
+    _lastError = null;
   }
 
   Future<void> _addPage(
@@ -750,7 +768,7 @@ class AppController extends ChangeNotifier {
     if (mode == ScanMode.idCard && mergeIdSides) {
       if (_idFront == null) {
         _idFront = bytes;
-        statusMessage = '正面已拍摄，请翻面后拍摄背面';
+        _setStatus('正面已拍摄，请翻面后拍摄背面');
         return;
       }
       bytes = DocumentExporter.mergeCards(_idFront!, bytes);
@@ -795,7 +813,7 @@ class AppController extends ChangeNotifier {
       output = await compute(DocumentExporter.imagePdf, [bytes]);
     } else {
       text = await _recognize(source);
-      if (text.trim().isEmpty) throw StateError('没有识别到文字；原图已保存在 $source');
+      if (text.trim().isEmpty) throw AppMessage('没有识别到文字；原图已保存在 {0}', [source]);
       output = f == OutputFormat.txt
           ? utf8.encode(text)
           : DocumentExporter.office(text, f);
@@ -806,9 +824,11 @@ class AppController extends ChangeNotifier {
     }
     if (text.isNotEmpty) lastOcrText = text;
     await _addPage(path, bytes, sourcePath: source, text: text);
-    statusMessage = multiPage
-        ? '已加入多页文档 · ${pages.length} 页'
-        : '已保存：${basename(path)}';
+    if (multiPage) {
+      _setStatus('已加入多页文档 · {0} 页', [pages.length]);
+    } else {
+      _setStatus('已保存：{0}', [basename(path)]);
+    }
   }
 
   Future<void> capture({bool automatic = false}) => _capture(
@@ -832,7 +852,7 @@ class AppController extends ChangeNotifier {
       return;
     }
     capturing = true;
-    lastError = null;
+    _lastError = null;
     final numberBookPages =
         (mode == ScanMode.book || book) && nameStyle == NameStyle.sequence;
     final startingSequence = sequence;
@@ -887,11 +907,12 @@ class AppController extends ChangeNotifier {
         if (numberBookPages) sequence++;
       }
       if (book) {
-        statusMessage =
-            '书籍拍摄完成 · ${output.images.length} 页'
-            '${output.notice.isEmpty ? '' : ' · ${output.notice}'}';
+        _setStatus(
+          output.notice.isEmpty ? '书籍拍摄完成 · {0} 页' : '书籍拍摄完成 · {0} 页 · {1}',
+          [output.images.length, AppMessage(output.notice)],
+        );
       } else if (output.images.length > 1) {
-        statusMessage = '已分别保存 ${output.images.length} 个文档';
+        _setStatus('已分别保存 {0} 个文档', [output.images.length]);
       }
       if (automatic && autoScan) {
         _autoDetector?.markCaptured(now: _autoClock.elapsed);
@@ -899,7 +920,7 @@ class AppController extends ChangeNotifier {
       }
     } catch (e) {
       if (automatic) _stopLocalAuto();
-      _error('${book ? '书籍拍摄' : '拍照'}失败：$e');
+      _error(book ? '书籍拍摄失败：{0}' : '拍照失败：{0}', [e]);
     } finally {
       if (numberBookPages && sequence != startingSequence) {
         unawaited(_savePrefs());
@@ -916,9 +937,9 @@ class AppController extends ChangeNotifier {
     lastBarcode = '';
     try {
       backend.recognizeBarcodeFromCamera(qrcode ? 1 : 0);
-      statusMessage = '正在识别…';
+      _setStatus('正在识别…');
     } catch (e) {
-      _error('条码识别失败：$e');
+      _error('条码识别失败：{0}', [e]);
     }
     notifyListeners();
   }
@@ -939,9 +960,9 @@ class AppController extends ChangeNotifier {
         await DocumentExporter.save(path, ev.mergedJpg!);
         await _addPage(path, ev.mergedJpg);
       }
-      statusMessage = '身份证读取成功';
+      _setStatus('身份证读取成功');
     } catch (e) {
-      _error('读证失败：$e');
+      _error('读证失败：{0}', [e]);
     } finally {
       recognizing = false;
       notifyListeners();
@@ -955,7 +976,7 @@ class AppController extends ChangeNotifier {
       return;
     }
     recognizing = true;
-    ocrStatus = '正在识别文字…';
+    _ocrStatus = const AppMessage('正在识别文字…');
     notifyListeners();
     try {
       final text = await _recognize(page.sourcePath);
@@ -973,11 +994,11 @@ class AppController extends ChangeNotifier {
           ocrText: text,
         );
       }
-      statusMessage = 'OCR 完成 · ${text.length} 字';
+      _setStatus('OCR 完成 · {0} 字', [text.length]);
     } catch (e) {
-      _error('OCR 失败：$e');
+      _error('OCR 失败：{0}', [e]);
     } finally {
-      ocrStatus = '';
+      _ocrStatus = null;
       recognizing = false;
       notifyListeners();
     }
@@ -1002,9 +1023,9 @@ class AppController extends ChangeNotifier {
             : DocumentExporter.office(lastOcrText, f),
       );
       lastExportPath = path;
-      statusMessage = '识别结果已导出：${basename(path)}';
+      _setStatus('识别结果已导出：{0}', [basename(path)]);
     } catch (e) {
-      _error('识别结果导出失败：$e');
+      _error('识别结果导出失败：{0}', [e]);
     } finally {
       exporting = false;
       notifyListeners();
@@ -1023,7 +1044,7 @@ class AppController extends ChangeNotifier {
       return;
     }
     exporting = true;
-    statusMessage = '正在生成 ${chosen.length} 页 PDF…';
+    _setStatus('正在生成 {0} 页 PDF…', [chosen.length]);
     notifyListeners();
     try {
       final images = <Uint8List>[];
@@ -1044,9 +1065,9 @@ class AppController extends ChangeNotifier {
         await compute(DocumentExporter.imagePdf, images),
       );
       lastExportPath = path;
-      statusMessage = 'PDF 已生成 · ${chosen.length} 页 · ${basename(path)}';
+      _setStatus('PDF 已生成 · {0} 页 · {1}', [chosen.length, basename(path)]);
     } catch (e) {
-      _error('PDF 导出失败：$e');
+      _error('PDF 导出失败：{0}', [e]);
     } finally {
       exporting = false;
       notifyListeners();
@@ -1093,12 +1114,17 @@ class AppController extends ChangeNotifier {
           debugPrint('导入 ${basename(path)}：$e');
         }
       }
-      final summary =
-          '已导入 $imported 张图片${skipped == 0 ? '' : '，跳过 $skipped 张已导入图片'}';
+      final summary = skipped == 0
+          ? AppMessage('已导入 {0} 张图片', [imported])
+          : AppMessage('已导入 {0} 张图片，跳过 {1} 张已导入图片', [imported, skipped]);
       if (failed.isEmpty) {
-        statusMessage = summary;
+        _status = summary;
       } else {
-        _error('$summary；无法导入 ${failed.length} 张：${failed.join('、')}');
+        _error('{0}；无法导入 {1} 张：{2}', [
+          summary,
+          failed.length,
+          failed.join('、'),
+        ]);
       }
     } finally {
       exporting = false;
@@ -1109,7 +1135,7 @@ class AppController extends ChangeNotifier {
   Future<void> toggleAutoScan() async {
     if (autoScan) {
       _stopLocalAuto();
-      statusMessage = '自动扫描已停止';
+      _setStatus('自动扫描已停止');
       notifyListeners();
       return;
     }
@@ -1134,12 +1160,12 @@ class AppController extends ChangeNotifier {
           _checkAutoCapture();
           notifyListeners();
         });
-        statusMessage = '自动扫描中 · 画面静止后倒计时 $autoDelaySeconds 秒';
+        _setStatus('自动扫描中 · 画面静止后倒计时 {0} 秒', [autoDelaySeconds]);
       } else {
         throw UnsupportedError('此模式请使用手动拍摄');
       }
     } catch (e) {
-      _error('自动扫描无法启动：$e');
+      _error('自动扫描无法启动：{0}', [e]);
     }
     notifyListeners();
   }
@@ -1206,7 +1232,7 @@ class AppController extends ChangeNotifier {
   Future<void> openFile(String path, {bool reveal = false}) async {
     try {
       if (!await File(path).exists() && !await Directory(path).exists()) {
-        throw StateError('文件不存在：$path');
+        throw AppMessage('文件不存在：{0}', [path]);
       }
       if (Platform.isWindows) {
         await Process.run('explorer.exe', reveal ? ['/select,$path'] : [path]);
@@ -1216,7 +1242,7 @@ class AppController extends ChangeNotifier {
         await Process.run('xdg-open', [path]);
       }
     } catch (e) {
-      _error('打开文件失败：$e');
+      _error('打开文件失败：{0}', [e]);
     }
   }
 
@@ -1297,7 +1323,7 @@ class AppController extends ChangeNotifier {
     try {
       _applySettings();
     } catch (e) {
-      _error('$e');
+      _error('{0}', [e]);
     }
     unawaited(_savePrefs());
     notifyListeners();
@@ -1425,7 +1451,7 @@ class AppController extends ChangeNotifier {
       await _savePrefs();
       notifyListeners();
     } catch (e) {
-      _error('保存目录不可用：$e');
+      _error('保存目录不可用：{0}', [e]);
     }
   }
 
@@ -1443,15 +1469,19 @@ class AppController extends ChangeNotifier {
       recording = true;
       recordStarted = DateTime.now();
       lastRecordPath = path;
-      statusMessage = '正在录制${recordSource.label}画面…';
+      _setStatus('正在录制{0}画面…', [AppMessage(recordSource.label)]);
       _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         final elapsed = DateTime.now().difference(recordStarted!).inSeconds;
-        statusMessage =
-            '正在录制${recordSource.label} · ${(elapsed ~/ 60).toString().padLeft(2, '0')}:${(elapsed % 60).toString().padLeft(2, '0')}';
+        final minutes = (elapsed ~/ 60).toString().padLeft(2, '0');
+        final seconds = (elapsed % 60).toString().padLeft(2, '0');
+        _setStatus('正在录制{0} · {1}', [
+          AppMessage(recordSource.label),
+          '$minutes:$seconds',
+        ]);
         notifyListeners();
       });
     } catch (e) {
-      _error('录制失败：$e');
+      _error('录制失败：{0}', [e]);
     } finally {
       capturing = false;
     }
@@ -1466,9 +1496,9 @@ class AppController extends ChangeNotifier {
     try {
       await backend.stopRecord();
       lastExportPath = lastRecordPath;
-      statusMessage = '视频已保存：${basename(lastRecordPath)}';
+      _setStatus('视频已保存：{0}', [basename(lastRecordPath)]);
     } catch (e) {
-      _error('保存视频失败：$e');
+      _error('保存视频失败：{0}', [e]);
     } finally {
       recording = false;
       exporting = false;
@@ -1482,7 +1512,7 @@ class AppController extends ChangeNotifier {
     try {
       action(backend);
     } catch (e) {
-      _error('$e');
+      _error('{0}', [e]);
     }
   }
 
@@ -1533,16 +1563,16 @@ class AppController extends ChangeNotifier {
   Future<void> manualFocus() async {
     if (_disposed || !canCapture) return;
     focusing = true;
-    lastError = null;
-    statusMessage = '正在重新对焦…';
+    _lastError = null;
+    _setStatus('正在重新对焦…');
     notifyListeners();
     try {
       await backend.manualFocus();
-      if (!_disposed) statusMessage = '已触发重新对焦，请等待画面稳定';
+      if (!_disposed) _setStatus('已触发重新对焦，请等待画面稳定');
     } catch (e) {
       if (!_disposed) {
         final detail = e is PlatformException ? e.message ?? e.code : '$e';
-        _error('对焦失败：$detail');
+        _error('对焦失败：{0}', [AppMessage(detail)]);
       }
     } finally {
       focusing = false;
@@ -1577,6 +1607,9 @@ class AppController extends ChangeNotifier {
   Future<void> _loadPrefs() async {
     final p = await SharedPreferences.getInstance();
     _prefs = p;
+    _interfaceLanguage.value = AppLanguage.fromCode(
+      p.getString('interfaceLanguage'),
+    );
     windowsVendorService = p.getBool('windowsVendorService') ?? false;
     outputDir = p.getString('outputDir') ?? '';
     if (Platform.isMacOS && p.containsKey('outputDirBookmark')) {
@@ -1591,7 +1624,7 @@ class AppController extends ChangeNotifier {
         }
       } catch (_) {
         outputDir = '';
-        statusMessage = '保存目录授权失效，请重新选择目录';
+        _setStatus('保存目录授权失效，请重新选择目录');
       }
     }
     prefix = p.getString('prefix') ?? 'Pic_';
@@ -1670,6 +1703,7 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _interfaceLanguage.dispose();
     _canvasTimer?.cancel();
     _recordTimer?.cancel();
     _stopLocalAuto();

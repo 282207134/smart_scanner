@@ -44,7 +44,7 @@ class AppColors {
   static const guide = Color(0xFF3DDC5A);
 }
 
-ThemeData buildAppTheme() {
+ThemeData buildAppTheme({bool japanese = false}) {
   final base = ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
@@ -56,8 +56,10 @@ ThemeData buildAppTheme() {
       error: AppColors.err,
     ),
     scaffoldBackgroundColor: AppColors.bg,
-    fontFamily: 'Microsoft YaHei',
-    fontFamilyFallback: const ['PingFang SC', 'Noto Sans CJK SC', 'Segoe UI'],
+    fontFamily: japanese ? 'Hiragino Sans' : 'Microsoft YaHei',
+    fontFamilyFallback: japanese
+        ? const ['Yu Gothic UI', 'Meiryo', 'Noto Sans CJK JP', 'Segoe UI']
+        : const ['PingFang SC', 'Noto Sans CJK SC', 'Segoe UI'],
   );
   return base.copyWith(
     dropdownMenuTheme: const DropdownMenuThemeData(

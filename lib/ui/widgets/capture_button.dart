@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/models.dart';
 import '../../state/app_controller.dart';
 import '../../theme.dart';
+import '../../localization.dart';
 
 class CaptureButton extends StatelessWidget {
   final AppController controller;
@@ -11,14 +12,14 @@ class CaptureButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = controller, video = controller.mode == ScanMode.video;
     final label = video
-        ? (c.recording ? '停止录制' : '开始录制')
+        ? (c.recording ? context.tr('停止录制') : context.tr('开始录制'))
         : c.mode == ScanMode.ocr
-        ? '识别文字'
+        ? context.tr('识别文字')
         : c.autoScan
-        ? '停止自动扫描'
+        ? context.tr('停止自动扫描')
         : c.autoMode
-        ? '开始自动扫描'
-        : '拍摄';
+        ? context.tr('开始自动扫描')
+        : context.tr('拍摄');
     final enabled =
         c.autoScan ||
         (c.recording && !c.busy) ||
@@ -50,16 +51,16 @@ class CaptureButton extends StatelessWidget {
               }
             : null,
         child: c.busy && !c.autoScan
-            ? const Row(
+            ? Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  SizedBox(
+                  const SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
-                  SizedBox(width: 10),
-                  Text('处理中…'),
+                  const SizedBox(width: 10),
+                  Text(context.tr('处理中…')),
                 ],
               )
             : Text(

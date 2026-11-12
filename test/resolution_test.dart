@@ -102,7 +102,7 @@ void main() {
     expect(c.supportsResolution(c.resolution!), isTrue);
   });
 
-  testWidgets('切换摄像头后重新读取、去重并排序尺寸，保留可用选择或回退', (tester) async {
+  testWidgets('每台摄像头默认使用最高分辨率，切回时恢复自己的选择', (tester) async {
     final backend = ResolutionBackend(
       const [],
       deviceSizes: const {
@@ -115,6 +115,7 @@ void main() {
         ],
         2: [
           ScanResolution(1920, 1080),
+          ScanResolution(2592, 1944),
           ScanResolution(5408, 4056),
           ScanResolution(4896, 3672),
           ScanResolution(4608, 3456),
@@ -152,6 +153,7 @@ void main() {
     await select(0);
     expect(menu(), ['4160×3120', '800×600']);
     expect(backend.lastWidth, 4160);
+    await tester.runAsync(() => c.selectResolution(c.resolutions.last));
     await select(1);
     expect(menu(), ['1920×1080', '1280×720', '640×480']);
     expect(c.resolution?.label, '1920×1080');
@@ -160,16 +162,25 @@ void main() {
       (1, 1920, 1080),
     );
     await select(2);
-    expect(menu(), ['5408×4056', '4896×3672', '4608×3456', '1920×1080']);
-    expect(c.resolution?.label, '1920×1080', reason: '新设备仍支持的尺寸应保留');
-    await tester.runAsync(() => c.selectResolution(c.resolutions.first));
+    expect(menu(), [
+      '5408×4056',
+      '4896×3672',
+      '4608×3456',
+      '2592×1944',
+      '1920×1080',
+    ]);
+    expect(c.resolution?.label, '5408×4056');
     expect(
       (backend.lastDevice, backend.lastWidth, backend.lastHeight),
       (2, 5408, 4056),
     );
     await select(0);
     expect(menu(), ['4160×3120', '800×600']);
-    expect(c.resolution?.label, '4160×3120');
+    expect(c.resolution?.label, '800×600');
+    expect(
+      (backend.lastDevice, backend.lastWidth, backend.lastHeight),
+      (0, 800, 600),
+    );
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

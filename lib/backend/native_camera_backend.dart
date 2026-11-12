@@ -71,8 +71,19 @@ class NativeCameraBackend implements ScannerBackend {
 
   @override
   Future<List<ScannerDevice>> listDevices() async {
-    final names = await _channel.invokeListMethod<String>('devices') ?? [];
-    return List.generate(names.length, (i) => ScannerDevice(i, names[i]));
+    final devices = await _channel.invokeListMethod<dynamic>('devices') ?? [];
+    return [
+      for (final (index, device) in devices.indexed)
+        switch (device) {
+          final String name => ScannerDevice(index, name),
+          {'name': final String name, 'id': final String id} => ScannerDevice(
+            index,
+            name,
+            id: id,
+          ),
+          _ => throw const FormatException('无法识别原生摄像头信息'),
+        },
+    ];
   }
 
   @override

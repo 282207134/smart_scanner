@@ -7,7 +7,8 @@ import 'dart:typed_data';
 class ScannerDevice {
   final int index;
   final String name;
-  const ScannerDevice(this.index, this.name);
+  final String? id;
+  const ScannerDevice(this.index, this.name, {this.id});
   @override
   String toString() => name;
 }

@@ -74,6 +74,74 @@ void main() {
     expect(backend.isOpen, isFalse);
   });
 
+  test('同名系统相机按 ID 保存尺寸，重排和重启后各自恢复', () async {
+    SharedPreferences.setMockInitialValues({});
+    addTearDown(() => SharedPreferences.setMockInitialValues({}));
+    var ids = ['camera-a', 'camera-b'];
+    var smallerModeAvailable = true;
+    messenger.setMockMethodCallHandler(native, (call) async {
+      calls.add(call);
+      return switch (call.method) {
+        'devices' => [
+          for (final id in ids) {'name': 'USB Camera', 'id': id},
+        ],
+        'resolutions' => [
+          {'width': 1920, 'height': 1080},
+          if (smallerModeAvailable) {'width': 640, 'height': 480},
+        ],
+        _ => null,
+      };
+    });
+
+    Future<AppController> start() async {
+      final controller = AppController();
+      await controller.init(outputDirOverride: output.path);
+      await controller.connect();
+      return controller;
+    }
+
+    final first = await start();
+    try {
+      expect(first.devices.map((d) => d.id), ids);
+      expect(first.resolution?.label, '1920×1080');
+      await first.selectResolution(const ScanResolution(640, 480));
+      await first.selectDevice(1);
+      expect(first.resolution?.label, '1920×1080');
+
+      ids = ids.reversed.toList();
+      await first.refreshDevices();
+      expect(first.deviceIndex, 0);
+      expect(first.resolution?.label, '1920×1080');
+      await first.selectDevice(1);
+      expect(first.resolution?.label, '640×480');
+    } finally {
+      first.dispose();
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    // Recreate the preferences cache to verify that the choice was persisted.
+    SharedPreferences.resetStatic();
+    ids = ids.reversed.toList();
+    smallerModeAvailable = false;
+    final restarted = await start();
+    try {
+      expect(restarted.resolution?.label, '1920×1080');
+      smallerModeAvailable = true;
+      await restarted.refreshDevices();
+      expect(restarted.resolution?.label, '640×480');
+      expect(calls.lastWhere((call) => call.method == 'open').arguments, {
+        'device': 0,
+        'canvasW': 640,
+        'canvasH': 480,
+        'width': 640,
+        'height': 480,
+      });
+    } finally {
+      restarted.dispose();
+      await Future<void>.delayed(Duration.zero);
+    }
+  });
+
   test('原生失败不会保留已打开状态，错误完整传回', () async {
     await backend.connect();
     await open();

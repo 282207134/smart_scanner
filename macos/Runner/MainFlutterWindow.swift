@@ -96,7 +96,7 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
           self.reply(result, ["path": url.path, "bookmark": FlutterStandardTypedData(bytes: refreshed)])
         case "devices":
           self.devices = AVCaptureDevice.devices(for: .video)
-          self.reply(result, self.devices.map { $0.localizedName })
+          self.reply(result, self.devices.map { ["name": $0.localizedName, "id": $0.uniqueID] })
         case "resolutions":
           let index = args["device"] as? Int ?? 0
           guard self.devices.indices.contains(index) else { throw NSError(domain: "设备不存在", code: 1) }

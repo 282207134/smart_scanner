@@ -333,19 +333,22 @@ class CameraWorker {
     IMFActivate** found = nullptr; UINT32 count = 0;
     Check(MFEnumDeviceSources(attrs.Get(), &found, &count));
     devices_.clear();
-    flutter::EncodableList names;
+    flutter::EncodableList devices;
     for (UINT32 i = 0; i < count; ++i) {
       WCHAR* name = nullptr; WCHAR* link = nullptr; UINT32 length = 0;
       const HRESULT a = found[i]->GetAllocatedString(MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, &name, &length);
       const HRESULT b = found[i]->GetAllocatedString(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK, &link, &length);
       if (SUCCEEDED(a) && SUCCEEDED(b)) {
         devices_.push_back({winrt::to_string(name), link});
-        names.emplace_back(devices_.back().name);
+        devices.emplace_back(Map{
+          {Value("name"), Value(devices_.back().name)},
+          {Value("id"), Value(winrt::to_string(link))},
+        });
       }
       CoTaskMemFree(name); CoTaskMemFree(link); found[i]->Release();
     }
     CoTaskMemFree(found);
-    return names;
+    return devices;
   }
   Device GetDevice(int index) {
     if (index < 0 || static_cast<size_t>(index) >= devices_.size()) throw std::runtime_error("摄像头不存在，请刷新设备列表");

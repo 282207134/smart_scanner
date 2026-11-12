@@ -35,6 +35,8 @@ class AppController extends ChangeNotifier {
   int deviceIndex = 0;
   List<ScanResolution> resolutions = const [];
   ScanResolution? resolution;
+  final Map<String, String> _deviceResolutions = {};
+  SharedPreferences? _prefs;
   bool previewOpen = false;
   ScanMode mode = ScanMode.document;
   CutMode cutMode = CutMode.none;
@@ -197,7 +199,7 @@ class AppController extends ChangeNotifier {
     try {
       await backend.connect();
       connected = true;
-      await refreshDevices();
+      await _refreshDevices();
     } catch (e) {
       connected = false;
       _error('连接失败：$e');
@@ -244,44 +246,97 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> refreshDevices() async {
-    if (!connected || busy || recording || autoScan) return;
-    devices = await backend.listDevices();
-    if (devices.isEmpty) {
-      previewOpen = false;
-      resolution = null;
-      resolutions = [];
-      statusMessage = '未发现摄像头或扫描仪，请检查连接后刷新设备';
-    } else {
-      if (!devices.any((d) => d.index == deviceIndex)) {
-        deviceIndex = devices.first.index;
-      }
-      await refreshResolutions();
-      await reopenPreview();
-    }
+    if (!connected || connecting || busy || recording || autoScan) return;
+    connecting = true;
     notifyListeners();
+    try {
+      await _refreshDevices();
+    } catch (e) {
+      _error('刷新设备失败：$e');
+    } finally {
+      connecting = false;
+      notifyListeners();
+    }
   }
 
-  Future<void> refreshResolutions() async {
-    final previous = resolution;
-    resolutions =
-        {for (final r in await backend.listResolutions(deviceIndex)) r.label: r}
-            .values
-            .toList()
-          ..sort((a, b) {
-            final pixels = (b.width * b.height).compareTo(a.width * a.height);
-            return pixels != 0 ? pixels : b.width.compareTo(a.width);
-          });
-    if (resolutions.isEmpty) {
+  Future<void> _refreshDevices() async {
+    await _opening;
+    if (_disposed || !connected) return;
+    final previous = _selectedDevice;
+    final previousKey = previous == null ? null : _resolutionKey(previous);
+    devices = await backend.listDevices();
+    if (devices.isEmpty) {
       resolution = null;
-      return;
+      resolutions = [];
+      await _closePreviewWithoutResolution();
+      statusMessage = '未发现摄像头或扫描仪，请检查连接后刷新设备';
+    } else {
+      final selected = devices
+          .where((device) => _resolutionKey(device) == previousKey)
+          .firstOrNull;
+      deviceIndex = (selected ?? devices.first).index;
+      try {
+        await refreshResolutions();
+      } catch (_) {
+        resolution = null;
+        resolutions = [];
+        await _closePreviewWithoutResolution();
+        rethrow;
+      }
+      await reopenPreview();
     }
-    resolution = resolutions.firstWhere(
-      (r) => r.label == previous?.label,
-      orElse: () => resolutions.firstWhere(
-        (r) => r.width == 2592 && r.height == 1944,
-        orElse: () => resolutions.first,
-      ),
-    );
+  }
+
+  ScannerDevice? get _selectedDevice =>
+      devices.where((device) => device.index == deviceIndex).firstOrNull;
+
+  String _resolutionKey(ScannerDevice device) {
+    final source = usingMock
+        ? 'demo'
+        : usesSystemCamera
+        ? 'native'
+        : 'vendor';
+    // The vendor service only reports names. Use the index for duplicate names.
+    final duplicateName =
+        device.id == null &&
+        devices.any(
+          (other) => other.index != device.index && other.name == device.name,
+        );
+    final identity = [
+      source,
+      device.id == null ? 'name' : 'id',
+      device.id ?? device.name,
+      if (duplicateName) device.index,
+    ];
+    return 'cameraResolution.${jsonEncode(identity)}';
+  }
+
+  Future<void> refreshResolutions() => _loadResolutions(deviceIndex);
+
+  Future<void> _loadResolutions(int index) async {
+    final sizes = await backend.listResolutions(index);
+    final available = {for (final r in sizes) r.label: r}.values.toList()
+      ..sort((a, b) {
+        final pixels = (b.width * b.height).compareTo(a.width * a.height);
+        return pixels != 0 ? pixels : b.width.compareTo(a.width);
+      });
+    deviceIndex = index;
+    final device = _selectedDevice;
+    final key = device == null ? null : _resolutionKey(device);
+    final saved = key == null
+        ? null
+        : _deviceResolutions[key] ?? _prefs?.getString(key);
+    resolutions = available;
+    resolution =
+        available.where((r) => r.label == saved).firstOrNull ??
+        available.firstOrNull;
+    if (resolution == null) await _closePreviewWithoutResolution();
+  }
+
+  Future<void> _closePreviewWithoutResolution() async {
+    if (!previewOpen) return;
+    previewOpen = false;
+    await backend.close();
   }
 
   Future<void> selectDevice(int index) async {
@@ -295,8 +350,9 @@ class AppController extends ChangeNotifier {
     connecting = true;
     notifyListeners();
     try {
-      deviceIndex = index;
-      await refreshResolutions();
+      await _opening;
+      if (_disposed) return;
+      await _loadResolutions(index);
       await reopenPreview();
     } catch (e) {
       _error('切换设备失败：$e');
@@ -314,7 +370,17 @@ class AppController extends ChangeNotifier {
     }
     _resetGeometry();
     resolution = r;
-    await reopenPreview();
+    final device = _selectedDevice;
+    if (device == null) {
+      await reopenPreview();
+      return;
+    }
+    final key = _resolutionKey(device);
+    _deviceResolutions[key] = r.label;
+    await Future.wait([
+      reopenPreview(),
+      if (_prefs case final prefs?) prefs.setString(key, r.label),
+    ]);
   }
 
   Future<void> reopenPreview() async {
@@ -387,7 +453,7 @@ class AppController extends ChangeNotifier {
       if (busy || recording || autoScan) return;
       canvasW = nw;
       canvasH = nh;
-      unawaited(reopenPreview());
+      if (!connecting || _opening != null) unawaited(reopenPreview());
     });
   }
 
@@ -1456,6 +1522,7 @@ class AppController extends ChangeNotifier {
   );
   Future<void> _loadPrefs() async {
     final p = await SharedPreferences.getInstance();
+    _prefs = p;
     windowsVendorService = p.getBool('windowsVendorService') ?? false;
     outputDir = p.getString('outputDir') ?? '';
     if (Platform.isMacOS && p.containsKey('outputDirBookmark')) {

@@ -20,9 +20,13 @@ class _SettingsBarState extends State<SettingsBar> {
   late final TextEditingController _prefix = TextEditingController(
     text: c.prefix,
   );
+  late final TextEditingController _cardWidth = TextEditingController(
+    text: c.idCardWidthMm.toString(),
+  );
   @override
   void dispose() {
     _prefix.dispose();
+    _cardWidth.dispose();
     super.dispose();
   }
 
@@ -126,6 +130,9 @@ class _SettingsBarState extends State<SettingsBar> {
                 c.outputFormat,
                 c.availableFormats,
                 c.setOutputFormat,
+                format: (value) => id && value == OutputFormat.imagePdf
+                    ? 'A4 证件 PDF'
+                    : value.label,
               ),
             if (video) ...[
               _select(
@@ -204,8 +211,88 @@ class _SettingsBarState extends State<SettingsBar> {
                 c.mode == ScanMode.contract)
               _check(context.tr('智能修边'), c.smartEdge, c.setSmartEdge),
             if (id) ...[
-              _check(context.tr('正反面合并'), c.mergeIdSides, c.setMergeIdSides),
-              if (!Platform.isMacOS)
+              _select(
+                context.tr('证件模式'),
+                c.mergeIdSides,
+                const [false, true],
+                c.setMergeIdSides,
+                format: (value) => value ? '双面（各拍一次）' : '单面',
+                width: 196,
+              ),
+              _select(
+                context.tr(
+                  c.outputFormat == OutputFormat.imagePdf ? '打印缩放' : '图片缩放',
+                ),
+                c.outputFormat == OutputFormat.imagePdf
+                    ? c.idPrintScale
+                    : c.idImageScale,
+                AppController.idImageScales,
+                c.outputFormat == OutputFormat.imagePdf
+                    ? c.setIdPrintScale
+                    : c.setIdImageScale,
+                format: (value) => value == 1
+                    ? context.tr(
+                        c.outputFormat == OutputFormat.imagePdf
+                            ? '原尺寸（100%）'
+                            : '原始像素（100%）',
+                      )
+                    : '${(value * 100).round()}%',
+                width: 176,
+              ),
+              if (c.outputFormat == OutputFormat.imagePdf) ...[
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      context.tr('卡片宽度（mm）'),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 82,
+                      height: 32,
+                      child: TextField(
+                        key: const Key('card-width-mm'),
+                        controller: _cardWidth,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        onChanged: c.setIdCardWidthMm,
+                        onEditingComplete: () {
+                          _cardWidth.text = c.idCardWidthMm.toString();
+                          FocusScope.of(context).unfocus();
+                        },
+                        onTapOutside: (_) {
+                          _cardWidth.text = c.idCardWidthMm.toString();
+                          FocusScope.of(context).unfocus();
+                        },
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  context.tr('A4 单张排版 · 上正面、下背面 · 打印请选择“实际大小”'),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textDim,
+                  ),
+                ),
+              ],
+              if (c.awaitingIdBack)
+                TextButton.icon(
+                  onPressed: c.retakeIdFront,
+                  icon: const Icon(Icons.replay, size: 16),
+                  label: Text(context.tr('重拍正面')),
+                ),
+              if (Platform.isWindows && c.windowsVendorService && !c.usingMock)
                 TextButton.icon(
                   onPressed: c.connected ? c.readIdCard : null,
                   icon: const Icon(Icons.nfc, size: 16),
@@ -264,10 +351,16 @@ class _SettingsBarState extends State<SettingsBar> {
                   context.tr('右下'),
                 ][v],
               ),
-              _select(context.tr('签章尺寸'), c.markSize, [.1, .2, .3, .4], (v) {
-                c.markSize = v;
-                c.notifyListeners();
-              }, format: (v) => '${(v * 100).round()}%'),
+              _select(
+                context.tr('签章尺寸'),
+                c.markSize,
+                [.1, .2, .3, .4],
+                (v) {
+                  c.markSize = v;
+                  c.notifyListeners();
+                },
+                format: (v) => '${(v * 100).round()}%',
+              ),
             ],
           ],
         ),
@@ -307,6 +400,7 @@ class _SettingsBarState extends State<SettingsBar> {
     List<T> items,
     ValueChanged<T> changed, {
     String Function(T)? format,
+    double width = 138,
   }) => LabeledSelect<T>(
     label: label,
     value: value,
@@ -315,6 +409,7 @@ class _SettingsBarState extends State<SettingsBar> {
       if (v != null) changed(v);
     },
     format: format,
+    width: width,
   );
   Widget _check(String label, bool value, ValueChanged<bool> changed) => Row(
     mainAxisSize: MainAxisSize.min,
@@ -340,6 +435,7 @@ class LabeledSelect<T> extends StatelessWidget {
   final List<T> items;
   final ValueChanged<T?> onChanged;
   final String Function(T)? format;
+  final double width;
   const LabeledSelect({
     super.key,
     required this.label,
@@ -347,6 +443,7 @@ class LabeledSelect<T> extends StatelessWidget {
     required this.items,
     required this.onChanged,
     this.format,
+    this.width = 138,
   });
   @override
   Widget build(BuildContext context) => Row(
@@ -361,7 +458,7 @@ class LabeledSelect<T> extends StatelessWidget {
       ],
       Container(
         height: 32,
-        width: 138,
+        width: width,
         padding: const EdgeInsets.symmetric(horizontal: 9),
         decoration: BoxDecoration(
           color: AppColors.panelDark,

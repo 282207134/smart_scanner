@@ -72,6 +72,12 @@ class AppController extends ChangeNotifier {
   OcrLanguage ocrLanguage = OcrLanguage.chineseEnglish;
   bool smartEdge = false, removeBg = false, autoScan = false, multiPage = false;
   bool mergeIdSides = false, qrcode = false;
+  static const idImageScales = [.5, .75, 1.0, 1.25, 1.5, 2.0];
+  double idImageScale = 1;
+  // Printed card size on the A4 sheet; kept apart from the image scale so a
+  // smaller saved image never shrinks the printout by accident.
+  double idPrintScale = 1;
+  double idCardWidthMm = 85.6;
   int jpgQuality = 85, sequence = 1;
   String prefix = 'Pic_', outputDir = '';
   ui.Image? previewImage;
@@ -99,6 +105,8 @@ class AppController extends ChangeNotifier {
   String lastRecordPath = '';
   DateTime? recordStarted;
   Uint8List? signatureBytes, stampBytes, _idFront;
+  bool get awaitingIdBack => _idFront != null;
+  Uint8List? get idFrontPreview => _idFront;
   double markSize = .2;
   int markCorner = 3;
   Timer? _canvasTimer;
@@ -142,7 +150,11 @@ class AppController extends ChangeNotifier {
       resolutions.any((r) => r.width == size.width && r.height == size.height);
   List<OutputFormat> get availableFormats => switch (mode) {
     ScanMode.ocr => [OutputFormat.txt, OutputFormat.word, OutputFormat.excel],
-    ScanMode.idCard => [OutputFormat.jpg, OutputFormat.png],
+    ScanMode.idCard => [
+      OutputFormat.jpg,
+      OutputFormat.png,
+      OutputFormat.imagePdf,
+    ],
     ScanMode.contract => OutputFormat.values.take(5).toList(),
     ScanMode.barcode => [
       OutputFormat.jpg,
@@ -690,6 +702,7 @@ class AppController extends ChangeNotifier {
     Uint8List? bytes, {
     String? sourcePath,
     String text = '',
+    CardPrintLayout? cardLayout,
   }) async {
     if (_disposed || pages.any((p) => p.filePath == path)) return;
     final page = CapturedPage(
@@ -698,6 +711,7 @@ class AppController extends ChangeNotifier {
       thumbnailJpg: bytes ?? Uint8List(0),
       time: DateTime.now(),
       ocrText: text,
+      cardLayout: cardLayout,
     );
     pages.add(page);
     _activatePage(pages.length - 1);
@@ -723,6 +737,7 @@ class AppController extends ChangeNotifier {
           thumbnailJpg: data.buffer.asUint8List(),
           time: page.time,
           ocrText: current.ocrText,
+          cardLayout: current.cardLayout,
         );
       }
     } catch (e) {
@@ -765,14 +780,16 @@ class AppController extends ChangeNotifier {
               : OcrTextLayout.horizontal,
         );
   Future<void> _saveCapture(Uint8List bytes, String base) async {
+    List<Uint8List>? cardImages;
+    if (mode == ScanMode.idCard) cardImages = [bytes];
     if (mode == ScanMode.idCard && mergeIdSides) {
       if (_idFront == null) {
         _idFront = bytes;
         _setStatus('正面已拍摄，请翻面后拍摄背面');
         return;
       }
+      cardImages = [_idFront!, bytes];
       bytes = DocumentExporter.mergeCards(_idFront!, bytes);
-      _idFront = null;
     }
     if (mode == ScanMode.contract) {
       if (signatureBytes != null) {
@@ -797,6 +814,35 @@ class AppController extends ChangeNotifier {
       source,
       await compute(_encodeRaster, (bytes, OutputFormat.jpg, 95)),
     );
+    CardPrintLayout? cardLayout;
+    if (cardImages != null) {
+      final sidePaths = <String>[];
+      for (var i = 0; i < cardImages.length; i++) {
+        final side = await _files.uniquePath(
+          '${base}_side_${i + 1}',
+          '.png',
+          source: true,
+        );
+        await DocumentExporter.save(
+          side,
+          await compute(_encodeRaster, (cardImages[i], OutputFormat.png, 95)),
+        );
+        sidePaths.add(side);
+      }
+      cardLayout = CardPrintLayout(
+        sidePaths,
+        widthMm: idCardWidthMm,
+        scale: idPrintScale,
+      );
+    }
+    if (mode == ScanMode.idCard &&
+        outputFormat != OutputFormat.imagePdf &&
+        idImageScale != 1) {
+      bytes = await compute(DocumentExporter.resizeImage, (
+        bytes,
+        idImageScale,
+      ));
+    }
     final f = outputFormat;
     String text = '';
     final path = await _files.uniquePath(base, f.ext);
@@ -810,7 +856,13 @@ class AppController extends ChangeNotifier {
     ].contains(f)) {
       output = await compute(_encodeRaster, (bytes, f, jpgQuality));
     } else if (f == OutputFormat.imagePdf) {
-      output = await compute(DocumentExporter.imagePdf, [bytes]);
+      output = await compute(DocumentExporter.pagesPdf, [
+        PdfImagePage(
+          cardImages ?? [bytes],
+          cardWidthMm: cardLayout?.widthMm,
+          scale: cardLayout?.scale ?? 1,
+        ),
+      ]);
     } else {
       text = await _recognize(source);
       if (text.trim().isEmpty) throw AppMessage('没有识别到文字；原图已保存在 {0}', [source]);
@@ -823,7 +875,14 @@ class AppController extends ChangeNotifier {
       await File('$path.txt').writeAsString(lastBarcode, flush: true);
     }
     if (text.isNotEmpty) lastOcrText = text;
-    await _addPage(path, bytes, sourcePath: source, text: text);
+    await _addPage(
+      path,
+      bytes,
+      sourcePath: source,
+      text: text,
+      cardLayout: cardLayout,
+    );
+    if (mode == ScanMode.idCard && mergeIdSides) _idFront = null;
     if (multiPage) {
       _setStatus('已加入多页文档 · {0} 页', [pages.length]);
     } else {
@@ -944,6 +1003,13 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void retakeIdFront() {
+    if (busy || mode != ScanMode.idCard) return;
+    _idFront = null;
+    _setStatus('请放置正面并拍摄');
+    notifyListeners();
+  }
+
   Future<void> readIdCard() async {
     if (!connected || busy) return;
     recognizing = true;
@@ -992,6 +1058,7 @@ class AppController extends ChangeNotifier {
           thumbnailJpg: pages[index].thumbnailJpg,
           time: page.time,
           ocrText: text,
+          cardLayout: page.cardLayout,
         );
       }
       _setStatus('OCR 完成 · {0} 字', [text.length]);
@@ -1047,9 +1114,19 @@ class AppController extends ChangeNotifier {
     _setStatus('正在生成 {0} 页 PDF…', [chosen.length]);
     notifyListeners();
     try {
-      final images = <Uint8List>[];
+      final images = <PdfImagePage>[];
       for (final p in chosen) {
-        images.add(await File(p.sourcePath).readAsBytes());
+        final layout = p.cardLayout;
+        images.add(
+          PdfImagePage(
+            [
+              for (final path in layout?.sidePaths ?? [p.sourcePath])
+                await File(path).readAsBytes(),
+            ],
+            cardWidthMm: layout?.widthMm,
+            scale: layout?.scale ?? 1,
+          ),
+        );
       }
       final path =
           destination ??
@@ -1062,7 +1139,7 @@ class AppController extends ChangeNotifier {
           );
       await DocumentExporter.save(
         path,
-        await compute(DocumentExporter.imagePdf, images),
+        await compute(DocumentExporter.pagesPdf, images),
       );
       lastExportPath = path;
       _setStatus('PDF 已生成 · {0} 页 · {1}', [chosen.length, basename(path)]);
@@ -1297,6 +1374,7 @@ class AppController extends ChangeNotifier {
       cutMode = CutMode.auto;
     }
     if (m == ScanMode.book) cutMode = CutMode.none;
+    if (m == ScanMode.idCard) cutMode = CutMode.auto;
     if (m != ScanMode.document && m != ScanMode.book && m != ScanMode.barcode) {
       autoMode = false;
     }
@@ -1421,9 +1499,31 @@ class AppController extends ChangeNotifier {
   }
 
   void setMergeIdSides(bool v) {
+    if (busy || mergeIdSides == v) return;
     mergeIdSides = v;
     _idFront = null;
-    notifyListeners();
+    _changed();
+  }
+
+  void setIdImageScale(double value) {
+    if (busy || !idImageScales.contains(value)) return;
+    idImageScale = value;
+    _changed();
+  }
+
+  void setIdPrintScale(double value) {
+    if (busy || !idImageScales.contains(value)) return;
+    idPrintScale = value;
+    _changed();
+  }
+
+  void setIdCardWidthMm(String value) {
+    final width = double.tryParse(value);
+    if (busy || width == null || !width.isFinite || width < 20 || width > 150) {
+      return;
+    }
+    idCardWidthMm = width;
+    _changed();
   }
 
   void setMark(Uint8List? bytes, {required bool stamp}) {
@@ -1661,6 +1761,12 @@ class AppController extends ChangeNotifier {
       orElse: () => OcrTextLayout.horizontal,
     );
     smartEdge = p.getBool('smartEdge') ?? false;
+    mergeIdSides = p.getBool('mergeIdSides') ?? false;
+    final savedScale = p.getDouble('idImageScale');
+    idImageScale = idImageScales.contains(savedScale) ? savedScale! : 1;
+    final savedPrint = p.getDouble('idPrintScale');
+    idPrintScale = idImageScales.contains(savedPrint) ? savedPrint! : 1;
+    idCardWidthMm = (p.getDouble('idCardWidthMm') ?? 85.6).clamp(20, 150);
     recordFormat =
         RecordFormat.values[(p.getInt('recordFormat') ?? 0).clamp(0, 2)];
     recordSource =
@@ -1694,6 +1800,10 @@ class AppController extends ChangeNotifier {
     await p.setString('bookReadingOrder', bookReadingOrder.name);
     await p.setString('ocrTextLayout', ocrTextLayout.name);
     await p.setBool('smartEdge', smartEdge);
+    await p.setBool('mergeIdSides', mergeIdSides);
+    await p.setDouble('idImageScale', idImageScale);
+    await p.setDouble('idPrintScale', idPrintScale);
+    await p.setDouble('idCardWidthMm', idCardWidthMm);
     await p.setInt('recordFormat', recordFormat.index);
     await p.setInt('recordSource', recordSource.index);
     await p.setBool('removeBg', removeBg);

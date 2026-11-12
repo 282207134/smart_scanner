@@ -536,4 +536,40 @@ const _translations = <String, (String, String)>{
     'Recording did not start because the camera returned no image.',
     'カメラから映像を取得できず、録画を開始できませんでした',
   ),
+
+  '拍摄正面': ('Capture front', '表面を撮影'),
+  '拍摄背面并合并': ('Capture back & combine', '裏面を撮影して結合'),
+  '重拍正面': ('Retake front', '表面を撮り直す'),
+  '请放置正面并拍摄': ('Place the front side up and capture.', '表面を上にして撮影してください'),
+  '第 2 步 · 翻到背面，绿框贴合卡片后拍摄，自动合并': (
+    'Step 2 · Turn the card over. Check the green edges, then capture to combine.',
+    '手順 2 · 裏返し、緑の枠を確認して撮影すると結合されます',
+  ),
+  '第 1 步 · 放置正面，四周留边，绿框贴合卡片后拍摄': (
+    'Step 1 · Place the front side up with space around it. Check the green edges before capture.',
+    '手順 1 · 表面を上にして周囲に余白を残し、緑の枠を確認して撮影してください',
+  ),
+  '放入一张卡片，绿框贴合边缘后拍摄；可选择双面模式': (
+    'Place one card in view. Check the green edges, then capture. Choose both sides to combine the front and back.',
+    'カードを 1 枚置き、緑の枠を確認して撮影してください。両面の撮影も選べます',
+  ),
+  '正面已暂存 · 等待背面': ('Front captured · Back pending', '表面を一時保存 · 裏面の撮影待ち'),
+  '证件模式': ('Card mode', 'カードの撮影方式'),
+  '双面（各拍一次）': ('Both sides (one at a time)', '両面（1 面ずつ撮影）'),
+  '单面': ('One side', '片面'),
+
+  '图片缩放': ('Image scale', '画像の倍率'),
+  '原始像素（100%）': ('Original pixels (100%)', '元の画素数（100%）'),
+  'A4 证件 PDF': ('A4 card PDF', 'A4 カード PDF'),
+  '打印缩放': ('Print scale', '印刷倍率'),
+  '原尺寸（100%）': ('Actual size (100%)', '原寸（100%）'),
+  '卡片宽度（mm）': ('Card width (mm)', 'カードの幅（mm）'),
+  'A4 单张排版 · 上正面、下背面 · 打印请选择“实际大小”': (
+    'One A4 sheet · Front above back · Print at actual size',
+    'A4 1 枚に配置 · 上が表面、下が裏面 · 印刷は「実際のサイズ」を選択',
+  ),
+  '证件排版超出 A4 范围，请减小打印缩放或检查裁切': (
+    'The card layout exceeds A4. Reduce the print scale or check the crop.',
+    'A4 の範囲を超えています。印刷倍率を下げるか、切り抜きを確認してください',
+  ),
 };

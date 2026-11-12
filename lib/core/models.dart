@@ -187,17 +187,29 @@ class CaptureResult {
 }
 
 /// 已拍摄页面（缩略图列表项）
+class CardPrintLayout {
+  final List<String> sidePaths;
+  final double widthMm, scale;
+  const CardPrintLayout(
+    this.sidePaths, {
+    required this.widthMm,
+    required this.scale,
+  });
+}
+
 class CapturedPage {
   final String filePath;
   final String sourcePath;
   final Uint8List thumbnailJpg;
   final DateTime time;
   final String ocrText; // OCR结果（如有）
+  final CardPrintLayout? cardLayout;
   CapturedPage({
     required this.filePath,
     required this.thumbnailJpg,
     required this.time,
     this.ocrText = '',
+    this.cardLayout,
     String? sourcePath,
   }) : sourcePath = sourcePath ?? filePath;
 }

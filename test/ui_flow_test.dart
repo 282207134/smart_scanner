@@ -66,6 +66,25 @@ Future<AppController> pumpApp(
 }
 
 void main() {
+  testWidgets('证件单面双面切换显示步骤', (tester) async {
+    final c = await pumpApp(tester);
+    c.setMode(ScanMode.idCard);
+    await tester.pumpAndSettle();
+    expect(find.text('证件模式'), findsOneWidget);
+    expect(find.text('图片缩放'), findsOneWidget);
+    c.setMergeIdSides(true);
+    c.setCutMode(CutMode.none);
+    await tester.pumpAndSettle();
+    expect(find.text('拍摄正面'), findsOneWidget);
+    await tester.runAsync(c.capture);
+    await tester.pumpAndSettle();
+    expect(find.text('拍摄背面并合并'), findsOneWidget);
+    expect(find.text('正面已暂存 · 等待背面'), findsOneWidget);
+    await tester.tap(find.text('重拍正面'));
+    await tester.pumpAndSettle();
+    expect(find.text('拍摄正面'), findsOneWidget);
+  });
+
   testWidgets('设置内即时切换英日界面，保留日文 OCR 语言', (tester) async {
     await tester.binding.setSurfaceSize(const Size(960, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -100,6 +119,7 @@ void main() {
       expect(find.text(book), findsOneWidget);
       for (final mode in ScanMode.values) {
         c.setMode(mode);
+        if (mode == ScanMode.idCard) c.setOutputFormat(OutputFormat.imagePdf);
         await tester.pumpAndSettle();
         expect(
           tester.takeException(),

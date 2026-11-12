@@ -222,6 +222,47 @@ class _PreviewViewState extends State<PreviewView> {
                     ),
                   if (c.previewOpen && !c.busy && c.cutMode == CutMode.manual)
                     _hint(context.tr('拖动四个角点贴合文件边缘；拖出新区域可重新框选')),
+                  if (c.previewOpen &&
+                      !c.busy &&
+                      c.mode == ScanMode.idCard &&
+                      c.cutMode != CutMode.manual)
+                    _hint(
+                      context.tr(
+                        c.awaitingIdBack
+                            ? '第 2 步 · 翻到背面，绿框贴合卡片后拍摄，自动合并'
+                            : c.mergeIdSides
+                            ? '第 1 步 · 放置正面，四周留边，绿框贴合卡片后拍摄'
+                            : '放入一张卡片，绿框贴合边缘后拍摄；可选择双面模式',
+                      ),
+                    ),
+                  if (c.mode == ScanMode.idCard && c.idFrontPreview != null)
+                    Positioned(
+                      right: 12,
+                      bottom: 12,
+                      child: Container(
+                        width: 156,
+                        padding: const EdgeInsets.all(8),
+                        color: AppColors.panel,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Image.memory(
+                              c.idFrontPreview!,
+                              cacheWidth: 320,
+                              height: 80,
+                              fit: BoxFit.contain,
+                              excludeFromSemantics: true,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              context.tr('正面已暂存 · 等待背面'),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   if (c.previewOpen && !c.busy && c.mode == ScanMode.book)
                     _hint(
                       c.bookSeamManual
@@ -230,6 +271,7 @@ class _PreviewViewState extends State<PreviewView> {
                     ),
                   if (c.previewOpen &&
                       !c.busy &&
+                      c.mode != ScanMode.idCard &&
                       (c.cutMode == CutMode.auto ||
                           c.cutMode == CutMode.multiImg))
                     _hint(
@@ -336,6 +378,7 @@ class _PreviewViewState extends State<PreviewView> {
 
   Widget _hint(String text) => Positioned(
     left: 10,
+    right: 10,
     top: 10,
     child: IgnorePointer(
       child: Container(
@@ -513,35 +556,28 @@ class _PreviewPainter extends CustomPainter {
           Paint()..color = AppColors.accent,
         );
       case ScanMode.idCard:
-        for (final region in regions) {
-          _region(canvas, region, borderPaint);
+        if (regions.isNotEmpty && cutMode != CutMode.manual) {
+          _region(
+            canvas,
+            regions.reduce((a, b) => a.area > b.area ? a : b),
+            borderPaint,
+          );
         }
-        // 上下两块证件区域参考框
-        final h = fitRect.height;
-        final r1 = Rect.fromLTWH(
-          fitRect.left + fitRect.width * 0.08,
-          fitRect.top + h * 0.12,
-          fitRect.width * 0.84,
-          h * 0.3,
-        );
-        final r2 = Rect.fromLTWH(
-          fitRect.left + fitRect.width * 0.08,
-          fitRect.top + h * 0.56,
-          fitRect.width * 0.84,
-          h * 0.3,
-        );
-        final guide = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5
-          ..color = AppColors.guide.withValues(alpha: 0.7);
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(r1, const Radius.circular(8)),
-          guide,
-        );
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(r2, const Radius.circular(8)),
-          guide,
-        );
+        if (regions.isEmpty && cutMode != CutMode.manual) {
+          final width = math.min(
+            contentRect.width * .72,
+            contentRect.height * .7 * 1.586,
+          );
+          final card = Rect.fromCenter(
+            center: contentRect.center,
+            width: width,
+            height: width / 1.586,
+          );
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(card, const Radius.circular(8)),
+            borderPaint..color = AppColors.textDim,
+          );
+        }
     }
 
     // 手动裁剪矩形

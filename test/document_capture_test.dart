@@ -12,11 +12,13 @@ import 'fixtures/documents.dart';
 class FixtureBackend extends MockBackend {
   final Uint8List bytes;
   int captures = 0;
+  void Function()? onCapture;
   FixtureBackend(this.bytes) : super(emitFrames: false);
   @override
   Future<CaptureResult> captureRaw({String savePath = ''}) async {
     captures++;
     await Future<void>.delayed(const Duration(milliseconds: 20));
+    onCapture?.call();
     return CaptureResult(savedPath: '', imageBytes: bytes);
   }
 }
@@ -103,10 +105,9 @@ void main() {
       expect(String.fromCharCodes((await file.readAsBytes()).take(4)), '%PDF');
     }
     expect(
-      Directory('${c.outputDir}/.sources')
-          .listSync()
-          .whereType<File>()
-          .where((f) => f.path.contains('_original')),
+      Directory(
+        '${c.outputDir}/.sources',
+      ).listSync().whereType<File>().where((f) => f.path.contains('_original')),
       hasLength(1),
     );
   });
@@ -130,10 +131,9 @@ void main() {
       expect(File(page.sourcePath).existsSync(), isTrue);
     }
     expect(
-      Directory('${c.outputDir}/.sources')
-          .listSync()
-          .whereType<File>()
-          .where((f) => f.path.contains('_original')),
+      Directory(
+        '${c.outputDir}/.sources',
+      ).listSync().whereType<File>().where((f) => f.path.contains('_original')),
       hasLength(1),
     );
   });
@@ -216,10 +216,9 @@ void main() {
     expect(c.capturing, isFalse);
     expect(c.canCapture, isTrue);
     expect(c.pages, isEmpty);
-    final original = Directory('${c.outputDir}/.sources')
-        .listSync()
-        .whereType<File>()
-        .single;
+    final original = Directory(
+      '${c.outputDir}/.sources',
+    ).listSync().whereType<File>().single;
     final image = img.decodeImage(await original.readAsBytes())!;
     expect((image.width, image.height), (320, 240));
   });
@@ -243,22 +242,84 @@ void main() {
     c.setMergeIdSides(true);
     await c.capture();
     expect(c.pages, isEmpty);
+    expect(c.awaitingIdBack, isTrue);
     expect(c.statusMessage, contains('正面已拍摄'));
     await c.capture();
     expect(c.lastError, isNull);
     expect(c.pages, hasLength(1));
+    expect(c.awaitingIdBack, isFalse);
     final image = img.decodeImage(
       await File(c.pages.single.filePath).readAsBytes(),
     )!;
     expect((image.width, image.height), (1080, 1520));
     expect((c.backend as FixtureBackend).captures, 2);
     expect(
-      Directory('${c.outputDir}/.sources')
-          .listSync()
-          .whereType<File>()
-          .where((f) => f.path.contains('_original')),
+      Directory(
+        '${c.outputDir}/.sources',
+      ).listSync().whereType<File>().where((f) => f.path.contains('_original')),
       hasLength(2),
     );
+  });
+  test('证件背面处理失败后保留正面，可以重新拍摄或重拍正面', () async {
+    final c = await setup();
+    c.setMode(ScanMode.idCard);
+    c.setCutMode(CutMode.none);
+    c.setMergeIdSides(true);
+    await c.capture();
+    final front = c.idFrontPreview;
+    final blocked = File('${c.outputDir}/blocked');
+    await blocked.writeAsString('occupied');
+    (c.backend as FixtureBackend).onCapture = () => c.outputDir = blocked.path;
+    await c.capture();
+    expect(c.lastError, isNotNull);
+    expect(c.idFrontPreview, same(front));
+    c.retakeIdFront();
+    expect(c.awaitingIdBack, isFalse);
+    expect(c.pages, isEmpty);
+  });
+  test('证件缩放仅改变输出尺寸，保留原始像素的裁切图', () async {
+    final c = await setup();
+    c.setMode(ScanMode.idCard);
+    c.setCutMode(CutMode.none);
+    c.setIdImageScale(.5);
+    await c.capture();
+    expect(c.lastError, isNull);
+    final saved = img.decodeImage(
+      await File(c.pages.single.filePath).readAsBytes(),
+    )!;
+    final source = img.decodeImage(
+      await File(c.pages.single.sourcePath).readAsBytes(),
+    )!;
+    expect((saved.width, saved.height), (500, 350));
+    expect((source.width, source.height), (1000, 700));
+  });
+  test('证件 A4 PDF 保留两面与尺寸，切换模式再导出仍是一张 A4', () async {
+    final c = await setup();
+    c.setMode(ScanMode.idCard);
+    c.setCutMode(CutMode.none);
+    c.setMergeIdSides(true);
+    c.setOutputFormat(OutputFormat.imagePdf);
+    c.setIdImageScale(.5);
+    c.setIdPrintScale(1.25);
+    await c.capture();
+    await c.capture();
+    expect(c.lastError, isNull);
+    expect(c.pages, hasLength(1));
+    expect(c.pages.single.filePath, endsWith('.pdf'));
+    final layout = c.pages.single.cardLayout!;
+    expect(layout.sidePaths, hasLength(2));
+    expect(layout.widthMm, 85.6);
+    expect(layout.scale, 1.25);
+    c.setMode(ScanMode.ocr);
+    await c.ocrLastCapture();
+    expect(c.pages.single.cardLayout, same(layout));
+    await c.exportPdf();
+    expect(c.lastError, isNull);
+    final pdf = String.fromCharCodes(
+      await File(c.lastExportPath).readAsBytes(),
+    );
+    expect(RegExp(r'/MediaBox\s*\[0 0 595\.').hasMatch(pdf), isTrue);
+    expect(RegExp(r'/Type/Page\b').allMatches(pdf), hasLength(1));
   });
   test('合同签章改变实际输出像素，同时保留未加签章的采集原图', () async {
     final c = await setup();

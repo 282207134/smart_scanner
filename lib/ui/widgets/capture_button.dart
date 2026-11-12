@@ -15,6 +15,8 @@ class CaptureButton extends StatelessWidget {
         ? (c.recording ? context.tr('停止录制') : context.tr('开始录制'))
         : c.mode == ScanMode.ocr
         ? context.tr('识别文字')
+        : c.mode == ScanMode.idCard && c.mergeIdSides
+        ? context.tr(c.awaitingIdBack ? '拍摄背面并合并' : '拍摄正面')
         : c.autoScan
         ? context.tr('停止自动扫描')
         : c.autoMode
@@ -60,14 +62,21 @@ class CaptureButton extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                   const SizedBox(width: 10),
-                  Text(context.tr('处理中…')),
+                  Flexible(child: Text(context.tr('处理中…'))),
                 ],
               )
-            : Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
+            // Long labels (e.g. “拍摄背面并合并”, English/Japanese text)
+            // shrink to one line instead of wrapping a lone character.
+            : FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
       ),

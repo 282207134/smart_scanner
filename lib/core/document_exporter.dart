@@ -10,6 +10,13 @@ import 'package:pdf/widgets.dart' as pw;
 
 import 'models.dart';
 
+class PdfImagePage {
+  final List<Uint8List> images;
+  final double? cardWidthMm;
+  final double scale;
+  const PdfImagePage(this.images, {this.cardWidthMm, this.scale = 1});
+}
+
 /// All exports consume copies of image bytes; original scans are never moved.
 class DocumentExporter {
   static img.Image? _decodeColor(Uint8List bytes) {
@@ -63,12 +70,74 @@ class DocumentExporter {
     });
   }
 
-  static Future<Uint8List> imagePdf(List<Uint8List> images) async {
-    if (images.isEmpty) throw StateError('没有可导出的图像');
+  static Uint8List resizeImage((Uint8List, double) input) {
+    final image = _decodeColor(input.$1);
+    if (image == null) throw const FormatException('无法读取图像');
+    final scaled = img.copyResize(
+      image,
+      width: (image.width * input.$2).round().clamp(1, 32768),
+      height: (image.height * input.$2).round().clamp(1, 32768),
+      interpolation: img.Interpolation.cubic,
+    );
+    return Uint8List.fromList(img.encodePng(scaled));
+  }
+
+  static Future<Uint8List> imagePdf(List<Uint8List> images) => pagesPdf([
+    for (final image in images) PdfImagePage([image]),
+  ]);
+
+  static Future<Uint8List> pagesPdf(List<PdfImagePage> pages) async {
+    if (pages.isEmpty) throw StateError('没有可导出的图像');
     final pdf = pw.Document();
-    for (final bytes in images) {
-      final image = _decodeColor(bytes);
-      if (image == null) throw const FormatException('PDF 中包含无法读取的图像');
+    for (final page in pages) {
+      final images = [
+        for (final bytes in page.images)
+          _decodeColor(bytes) ??
+              (throw const FormatException('PDF 中包含无法读取的图像')),
+      ];
+      final cardWidth = page.cardWidthMm;
+      if (cardWidth != null) {
+        final width = cardWidth * page.scale * PdfPageFormat.mm;
+        final heights = [
+          for (final image in images) width * image.height / image.width,
+        ];
+        const margin = 15 * PdfPageFormat.mm;
+        const gap = 15 * PdfPageFormat.mm;
+        final height =
+            heights.fold(0.0, (sum, value) => sum + value) +
+            gap * (images.length - 1);
+        if (images.isEmpty ||
+            width <= 0 ||
+            height <= 0 ||
+            width > PdfPageFormat.a4.width - margin * 2 ||
+            height > PdfPageFormat.a4.height - margin * 2) {
+          throw StateError('证件排版超出 A4 范围，请减小打印缩放或检查裁切');
+        }
+        pdf.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(margin),
+            build: (_) => pw.Center(
+              child: pw.Column(
+                mainAxisSize: pw.MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < images.length; i++) ...[
+                    if (i > 0) pw.SizedBox(height: gap),
+                    pw.Image(
+                      pw.MemoryImage(img.encodeJpg(images[i], quality: 95)),
+                      width: width,
+                      height: heights[i],
+                      fit: pw.BoxFit.contain,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+        continue;
+      }
+      final image = images.single;
       final raster = pw.MemoryImage(img.encodeJpg(image, quality: 95));
       final format = image.width > image.height
           ? PdfPageFormat.a4.landscape

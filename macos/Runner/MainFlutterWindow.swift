@@ -5,6 +5,7 @@ import Vision
 import VisionKit
 import CoreImage
 import ImageIO
+import Accelerate
 
 class MainFlutterWindow: NSWindow {
   private var scanner: NativeScanner?
@@ -302,13 +303,17 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
       var rgba = [UInt8](repeating: 0, count: fw * fh * 4)
       rgba.withUnsafeMutableBytes { ptr in context.render(transformed, toBitmap: ptr.baseAddress!, rowBytes: fw * 4, bounds: area, format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB()) }
       var rgb = Data(count: fw * fh * 3)
-      rgb.withUnsafeMutableBytes { (ptr: UnsafeMutableRawBufferPointer) in
-        // Core Image bitmap rows already match Flutter's top-to-bottom order.
-        for y in 0..<fh { for x in 0..<fw {
-          let src = (y * fw + x) * 4, dst = (y * fw + x) * 3
-          ptr[dst] = rgba[src]; ptr[dst + 1] = rgba[src + 1]; ptr[dst + 2] = rgba[src + 2]
-        } }
+      // Core Image bitmap rows already match Flutter's top-to-bottom order.
+      // vImage keeps this per-frame copy cheap so capture requests on the same
+      // serial queue are not starved by preview frames.
+      let converted = rgba.withUnsafeMutableBytes { src in
+        rgb.withUnsafeMutableBytes { dst -> vImage_Error in
+          var source = vImage_Buffer(data: src.baseAddress!, height: vImagePixelCount(fh), width: vImagePixelCount(fw), rowBytes: fw * 4)
+          var target = vImage_Buffer(data: dst.baseAddress!, height: vImagePixelCount(fh), width: vImagePixelCount(fw), rowBytes: fw * 3)
+          return vImageConvert_RGBA8888toRGB888(&source, &target, vImage_Flags(kvImageNoFlags))
+        }
       }
+      guard converted == kvImageNoError else { return }
       let event: [String: Any] = ["x": Int(area.minX), "y": canvasH-Int(area.maxY), "width": fw, "height": fh, "rgb": FlutterStandardTypedData(bytes: rgb)]
       DispatchQueue.main.async { self.sink?(event) }
     } catch { /* The next valid frame will replace this frame. */ }

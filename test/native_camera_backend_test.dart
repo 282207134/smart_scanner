@@ -74,6 +74,38 @@ void main() {
     expect(backend.isOpen, isFalse);
   });
 
+  test('OCR 工作区把书籍的竖排设置与日语语言传给 macOS', () async {
+    final controller = AppController();
+    await controller.init(
+      backendOverride: backend,
+      outputDirOverride: output.path,
+    );
+    addTearDown(controller.dispose);
+    messenger.setMockMethodCallHandler(native, (call) async {
+      calls.add(call);
+      return '日本の春';
+    });
+    controller.setMode(ScanMode.book);
+    controller.setOcrLanguage(OcrLanguage.japanese);
+    controller.setOcrTextLayout(OcrTextLayout.vertical);
+    controller.setMode(ScanMode.ocr);
+    controller.pages.add(
+      CapturedPage(
+        filePath: 'book.jpg',
+        thumbnailJpg: image,
+        time: DateTime.now(),
+      ),
+    );
+    controller.selectedPage = 0;
+    await controller.ocrLastCapture();
+    expect(calls.singleWhere((call) => call.method == 'ocr').arguments, {
+      'path': 'book.jpg',
+      'language': 'ja-JP',
+      'textLayout': 'vertical',
+    });
+    expect(controller.currentPage?.ocrText, '日本の春');
+  }, skip: !Platform.isMacOS);
+
   test('同名系统相机按 ID 保存尺寸，重排和重启后各自恢复', () async {
     SharedPreferences.setMockInitialValues({});
     addTearDown(() => SharedPreferences.setMockInitialValues({}));

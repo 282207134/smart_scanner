@@ -46,6 +46,8 @@ class AppController extends ChangeNotifier {
   NameStyle nameStyle = NameStyle.dateTime;
   FlattenMode flattenMode = FlattenMode.none;
   BookPage bookPage = BookPage.left;
+  BookReadingOrder bookReadingOrder = BookReadingOrder.leftToRight;
+  OcrTextLayout ocrTextLayout = OcrTextLayout.horizontal;
   OcrLanguage ocrLanguage = OcrLanguage.chineseEnglish;
   bool smartEdge = false, removeBg = false, autoScan = false, multiPage = false;
   bool mergeIdSides = false, qrcode = false;
@@ -515,6 +517,7 @@ class AppController extends ChangeNotifier {
               f.width,
               f.height,
               bookSeamManual ? bookSeam : null,
+              ocrTextLayout,
             ))
           : null;
       final List<DocumentRegion> regions = layout != null
@@ -712,12 +715,12 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  String _nextFileName([String suffix = '']) {
+  String _nextFileName({String suffix = '', bool advanceSequence = true}) {
     final now = DateTime.now();
     final stamp =
         '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}_${now.millisecond.toString().padLeft(3, '0')}';
     final value = switch (nameStyle) {
-      NameStyle.sequence => '$prefix${(sequence++).toString().padLeft(4, '0')}',
+      NameStyle.sequence => '$prefix${sequence.toString().padLeft(4, '0')}',
       NameStyle.folderName =>
         '${basename(outputDir.replaceAll(RegExp(r'[\\/]+$'), ''))}_$stamp',
       NameStyle.custom => prefix.isEmpty ? stamp : prefix,
@@ -727,13 +730,22 @@ class AppController extends ChangeNotifier {
         '$prefix${lastBarcode.isEmpty ? stamp : lastBarcode}',
       _ => '$prefix$stamp',
     };
-    unawaited(_savePrefs());
+    if (advanceSequence && nameStyle == NameStyle.sequence) {
+      sequence++;
+      unawaited(_savePrefs());
+    }
     return '${ScanFileStore.sanitizeName(value, fallback: 'Scan_$stamp')}$suffix';
   }
 
   Future<String> _recognize(String imagePath) async => usingMock
       ? (await backend.ocrImage(imagePath, ocrLanguage)).text
-      : NativeOcr.recognize(imagePath, ocrLanguage);
+      : NativeOcr.recognize(
+          imagePath,
+          ocrLanguage,
+          layout: mode == ScanMode.book || mode == ScanMode.ocr
+              ? ocrTextLayout
+              : OcrTextLayout.horizontal,
+        );
   Future<void> _saveCapture(Uint8List bytes, String base) async {
     if (mode == ScanMode.idCard && mergeIdSides) {
       if (_idFront == null) {
@@ -821,10 +833,13 @@ class AppController extends ChangeNotifier {
     }
     capturing = true;
     lastError = null;
+    final numberBookPages =
+        (mode == ScanMode.book || book) && nameStyle == NameStyle.sequence;
+    final startingSequence = sequence;
     notifyListeners();
     try {
       _applySettings();
-      final base = _nextFileName();
+      final base = _nextFileName(advanceSequence: !numberBookPages);
       final rawPath = await _files.uniquePath(
         '${base}_original',
         '.jpg',
@@ -845,6 +860,8 @@ class AppController extends ChangeNotifier {
         smartEdge: smartEdge,
         removeBackground: removeBg,
         bookPage: bookPage,
+        bookReadingOrder: bookReadingOrder,
+        bookTextLayout: ocrTextLayout,
       );
       final output = book
           ? await compute(DocumentVision.flattenBook, (
@@ -854,12 +871,20 @@ class AppController extends ChangeNotifier {
             ))
           : await compute(DocumentVision.process, request);
       for (var i = 0; i < output.images.length; i++) {
-        final suffix = output.images.length == 1
-            ? ''
-            : book
-            ? '_${i == 0 ? 'L' : 'R'}'
-            : '_${(i + 1).toString().padLeft(2, '0')}';
-        await _saveCapture(output.images[i], '$base$suffix');
+        final pageBase = numberBookPages
+            ? _nextFileName(advanceSequence: false)
+            : base;
+        final order = (i + 1).toString().padLeft(2, '0');
+        final side = book && output.images.length == 2
+            ? request.bookReadingOrder.pages[i]
+            : null;
+        final suffix = switch (side) {
+          BookPage.left => numberBookPages ? '_L' : '_${order}_L',
+          BookPage.right => numberBookPages ? '_R' : '_${order}_R',
+          null => output.images.length == 1 ? '' : '_$order',
+        };
+        await _saveCapture(output.images[i], '$pageBase$suffix');
+        if (numberBookPages) sequence++;
       }
       if (book) {
         statusMessage =
@@ -876,6 +901,9 @@ class AppController extends ChangeNotifier {
       if (automatic) _stopLocalAuto();
       _error('${book ? '书籍拍摄' : '拍照'}失败：$e');
     } finally {
+      if (numberBookPages && sequence != startingSequence) {
+        unawaited(_savePrefs());
+      }
       capturing = false;
       notifyListeners();
       if (_openAgain) unawaited(reopenPreview());
@@ -900,7 +928,10 @@ class AppController extends ChangeNotifier {
     recognizing = true;
     notifyListeners();
     try {
-      final path = await _files.uniquePath(_nextFileName('_id'), '.jpg');
+      final path = await _files.uniquePath(
+        _nextFileName(suffix: '_id'),
+        '.jpg',
+      );
       final ev = await backend.readIdCard(path);
       if (!ev.ok) throw StateError('未读取到证件，请确认已连接身份证读卡器');
       lastIdCard = ev;
@@ -960,7 +991,10 @@ class AppController extends ChangeNotifier {
       final f = [OutputFormat.word, OutputFormat.excel].contains(outputFormat)
           ? outputFormat
           : OutputFormat.txt;
-      final path = await _files.uniquePath(_nextFileName('_OCR'), f.ext);
+      final path = await _files.uniquePath(
+        _nextFileName(suffix: '_OCR'),
+        f.ext,
+      );
       await DocumentExporter.save(
         path,
         f == OutputFormat.txt
@@ -997,7 +1031,14 @@ class AppController extends ChangeNotifier {
         images.add(await File(p.sourcePath).readAsBytes());
       }
       final path =
-          destination ?? await _files.uniquePath(_nextFileName('_合并'), '.pdf');
+          destination ??
+          await _files.uniquePath(
+            _nextFileName(
+              suffix: '_合并',
+              advanceSequence: mode != ScanMode.book,
+            ),
+            '.pdf',
+          );
       await DocumentExporter.save(
         path,
         await compute(DocumentExporter.imagePdf, images),
@@ -1299,6 +1340,19 @@ class AppController extends ChangeNotifier {
     _changed();
   }
 
+  void setBookReadingOrder(BookReadingOrder value) {
+    if (busy || recording || autoScan) return;
+    bookReadingOrder = value;
+    _changed();
+  }
+
+  void setOcrTextLayout(OcrTextLayout value) {
+    if (busy || recording || autoScan) return;
+    ocrTextLayout = value;
+    _visionGeneration++;
+    _changed();
+  }
+
   void setOcrLanguage(OcrLanguage v) {
     ocrLanguage = v;
     _changed();
@@ -1565,6 +1619,14 @@ class AppController extends ChangeNotifier {
           0,
           OcrLanguage.values.length - 1,
         )];
+    bookReadingOrder = BookReadingOrder.values.firstWhere(
+      (order) => order.name == p.getString('bookReadingOrder'),
+      orElse: () => BookReadingOrder.leftToRight,
+    );
+    ocrTextLayout = OcrTextLayout.values.firstWhere(
+      (layout) => layout.name == p.getString('ocrTextLayout'),
+      orElse: () => OcrTextLayout.horizontal,
+    );
     smartEdge = p.getBool('smartEdge') ?? false;
     recordFormat =
         RecordFormat.values[(p.getInt('recordFormat') ?? 0).clamp(0, 2)];
@@ -1596,6 +1658,8 @@ class AppController extends ChangeNotifier {
     );
     await p.setInt('cutMode', cutMode.index);
     await p.setInt('ocrLanguage', ocrLanguage.index);
+    await p.setString('bookReadingOrder', bookReadingOrder.name);
+    await p.setString('ocrTextLayout', ocrTextLayout.name);
     await p.setBool('smartEdge', smartEdge);
     await p.setInt('recordFormat', recordFormat.index);
     await p.setInt('recordSource', recordSource.index);

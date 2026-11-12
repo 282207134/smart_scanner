@@ -110,7 +110,7 @@ void main() {
       hasLength(1),
     );
   });
-  test('书籍和文档共用一次原图采集，左右页命名与原图保留不变', () async {
+  test('左页优先的双页扫描保留一张原图，两页分别编号', () async {
     final c = await setup();
     c.setMode(ScanMode.book);
     c.setFlattenMode(FlattenMode.split);
@@ -119,7 +119,7 @@ void main() {
     expect((c.backend as FixtureBackend).captures, 1);
     expect(c.pages.map((p) => AppController.basename(p.filePath)), [
       'Pic_0001_L.jpg',
-      'Pic_0001_R.jpg',
+      'Pic_0002_R.jpg',
     ]);
     expect(c.capturing, isFalse);
     for (final page in c.pages) {
@@ -136,6 +136,48 @@ void main() {
           .where((f) => f.path.contains('_original')),
       hasLength(1),
     );
+  });
+  test('右页优先的双页扫描按阅读顺序连续编号和导出', () async {
+    final c = await setup();
+    c.setMode(ScanMode.book);
+    c.setFlattenMode(FlattenMode.split);
+    c.setBookReadingOrder(BookReadingOrder.rightToLeft);
+    c.setOcrTextLayout(OcrTextLayout.vertical);
+    await c.capture();
+    expect(c.lastError, isNull);
+
+    final right = img.decodeImage(
+      await File(c.pages[0].sourcePath).readAsBytes(),
+    )!;
+    final left = img.decodeImage(
+      await File(c.pages[1].sourcePath).readAsBytes(),
+    )!;
+    expect(right.width, lessThan(left.width), reason: '测试原图的右页比左页窄');
+
+    await c.exportPdf();
+    expect(c.lastError, isNull);
+    final pdf = await File(c.lastExportPath).readAsBytes();
+    final jpegImages = RegExp(r'\xFF\xD8.*?\xFF\xD9', dotAll: true)
+        .allMatches(String.fromCharCodes(pdf))
+        .map(
+          (match) => img.decodeJpg(Uint8List.fromList(match[0]!.codeUnits))!,
+        );
+    expect(jpegImages.map((image) => image.width), [right.width, left.width]);
+
+    c.setFlattenMode(FlattenMode.flatten);
+    await c.capture();
+    expect(c.lastError, isNull);
+    expect(c.statusMessage, contains('竖排书页已矫正透视'));
+    expect(c.pages.map((p) => AppController.basename(p.filePath)), [
+      'Pic_0001_R.jpg',
+      'Pic_0002_L.jpg',
+      'Pic_0003_R.jpg',
+      'Pic_0004_L.jpg',
+    ]);
+    c.setNameStyle(NameStyle.dateTime);
+    await c.capture();
+    expect(c.pages[4].filePath, endsWith('_01_R.jpg'));
+    expect(c.pages[5].filePath, endsWith('_02_L.jpg'));
   });
   test('多页 PDF 的输出选项生成真正的 PDF，书籍左右页也不被改存 JPG', () async {
     for (final mode in [ScanMode.document, ScanMode.book]) {

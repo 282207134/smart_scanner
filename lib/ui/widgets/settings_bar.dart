@@ -67,6 +67,14 @@ class _SettingsBarState extends State<SettingsBar> {
                 c.setBookPage,
                 format: (v) => v.label,
               ),
+            if (book)
+              _select(
+                '阅读顺序',
+                c.bookReadingOrder,
+                BookReadingOrder.values,
+                c.setBookReadingOrder,
+                format: (v) => v.label,
+              ),
             if (book && c.flattenMode != FlattenMode.none)
               TextButton.icon(
                 onPressed: c.resetBookSeam,
@@ -138,6 +146,14 @@ class _SettingsBarState extends State<SettingsBar> {
                 c.ocrLanguage,
                 OcrLanguage.values,
                 c.setOcrLanguage,
+              ),
+            if (book || ocr)
+              _select(
+                '文字方向',
+                c.ocrTextLayout,
+                OcrTextLayout.values,
+                c.setOcrTextLayout,
+                format: (v) => v.label,
               ),
             if (!ocr)
               _select(

@@ -199,6 +199,11 @@ class _PreviewViewState extends State<PreviewView> {
                       bookPage: c.flattenMode == FlattenMode.singlePage
                           ? c.bookPage
                           : null,
+                      bookReadingOrder:
+                          c.flattenMode == FlattenMode.split ||
+                              c.flattenMode == FlattenMode.flatten
+                          ? c.bookReadingOrder
+                          : null,
                       connected: c.connected,
                       previewOpen: c.previewOpen,
                       statusMessage: c.statusMessage,
@@ -385,6 +390,7 @@ class _PreviewPainter extends CustomPainter {
   final double seam;
   final BookLayout? bookLayout;
   final BookPage? bookPage;
+  final BookReadingOrder? bookReadingOrder;
   final bool connected;
   final bool previewOpen;
   final String statusMessage;
@@ -400,6 +406,7 @@ class _PreviewPainter extends CustomPainter {
     required this.seam,
     this.bookLayout,
     this.bookPage,
+    this.bookReadingOrder,
     required this.connected,
     required this.previewOpen,
     required this.statusMessage,
@@ -465,11 +472,17 @@ class _PreviewPainter extends CustomPainter {
           if (bookPage != null && regions.length == 2 && bookPage!.index != i) {
             continue;
           }
+          final side = regions.length == 2 ? BookPage.values[i] : null;
+          final position = side == null
+              ? null
+              : bookReadingOrder?.pages.indexOf(side);
           _region(
             canvas,
             regions[i],
             borderPaint,
-            label: regions.length == 2 ? BookPage.values[i].label : null,
+            label: position == null
+                ? side?.label
+                : '${position + 1} · ${side!.label}',
           );
         }
         Offset point(ScanPoint p) => Offset(
@@ -649,6 +662,7 @@ class _PreviewPainter extends CustomPainter {
       old.seam != seam ||
       old.bookLayout != bookLayout ||
       old.bookPage != bookPage ||
+      old.bookReadingOrder != bookReadingOrder ||
       old.previewOpen != previewOpen ||
       old.statusMessage != statusMessage;
 }

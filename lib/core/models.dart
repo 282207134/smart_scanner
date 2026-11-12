@@ -113,6 +113,23 @@ enum BookPage {
   final String label;
 }
 
+enum BookReadingOrder {
+  leftToRight('左页优先', [BookPage.left, BookPage.right]),
+  rightToLeft('右页优先', [BookPage.right, BookPage.left]);
+
+  const BookReadingOrder(this.label, this.pages);
+  final String label;
+  final List<BookPage> pages;
+}
+
+enum OcrTextLayout {
+  horizontal('横排'),
+  vertical('竖排（右起）');
+
+  const OcrTextLayout(this.label);
+  final String label;
+}
+
 /// OCR 识别语言（服务端0xC2 languageIndex）
 enum OcrLanguage {
   chineseEnglish('中文简体,English', 0),

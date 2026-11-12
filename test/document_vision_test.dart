@@ -336,4 +336,47 @@ void main() {
       greaterThan(180),
     );
   });
+
+  test('竖排的长墨线不会盖过较浅的真实书脊', () {
+    final image = img.Image(width: 1000, height: 700);
+    img.fill(image, color: img.ColorRgb8(25, 25, 25));
+    img.fillRect(
+      image,
+      x1: 100,
+      y1: 55,
+      x2: 900,
+      y2: 650,
+      color: img.ColorRgb8(240, 240, 240),
+    );
+    img.drawLine(
+      image,
+      x1: 520,
+      y1: 55,
+      x2: 535,
+      y2: 650,
+      color: img.ColorRgb8(221, 221, 221),
+      thickness: 3,
+    );
+    img.drawLine(
+      image,
+      x1: 453,
+      y1: 116,
+      x2: 466,
+      y2: 508,
+      color: img.ColorRgb8(30, 30, 30),
+      thickness: 5,
+    );
+    final source = cv.imdecode(img.encodePng(image), cv.IMREAD_COLOR);
+    try {
+      final layout = DocumentVision.detectBook(
+        source,
+        textLayout: OcrTextLayout.vertical,
+      );
+      expect(layout.pages, hasLength(2));
+      expect(layout.spineTop!.x, closeTo(.520, .012));
+      expect(layout.spineBottom!.x, closeTo(.535, .012));
+    } finally {
+      source.dispose();
+    }
+  });
 }

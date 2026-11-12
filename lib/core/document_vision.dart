@@ -12,6 +12,8 @@ class VisionRequest {
   final ColorEffect effect;
   final DocumentRegion? manual;
   final BookPage bookPage;
+  final BookReadingOrder bookReadingOrder;
+  final OcrTextLayout bookTextLayout;
   final bool smartEdge, removeBackground;
   const VisionRequest(
     this.bytes, {
@@ -19,6 +21,8 @@ class VisionRequest {
     this.effect = ColorEffect.native,
     this.manual,
     this.bookPage = BookPage.left,
+    this.bookReadingOrder = BookReadingOrder.leftToRight,
+    this.bookTextLayout = OcrTextLayout.horizontal,
     this.smartEdge = false,
     this.removeBackground = false,
   });
@@ -543,7 +547,9 @@ class DocumentVision {
     }
   }
 
-  static BookLayout detectBookRgb((Uint8List, int, int, double?) input) {
+  static BookLayout detectBookRgb(
+    (Uint8List, int, int, double?, OcrTextLayout) input,
+  ) {
     final rgb = cv.Mat.fromList(
       input.$3,
       input.$2,
@@ -552,7 +558,7 @@ class DocumentVision {
     );
     final source = cv.cvtColor(rgb, cv.COLOR_RGB2BGR);
     try {
-      return detectBook(source, seam: input.$4);
+      return detectBook(source, seam: input.$4, textLayout: input.$5);
     } finally {
       source.dispose();
       rgb.dispose();
@@ -574,6 +580,7 @@ class DocumentVision {
     DocumentRegion spread,
     double? hint, {
     double? prior,
+    bool verticalText = false,
   }) {
     final scale = math.min(1.0, 900 / source.cols);
     final small = cv.resize(source, (
@@ -583,19 +590,28 @@ class DocumentVision {
     final gray = cv.cvtColor(small, cv.COLOR_BGR2GRAY);
     final width = spread.right - spread.left;
     final center = hint ?? prior ?? (spread.left + spread.right) / 2;
-    final left =
-        ((hint == null ? spread.left + width * .23 : hint - .065) * small.cols)
-            .round()
-            .clamp(0, small.cols - 2);
-    final right =
-        ((hint == null ? spread.right - width * .23 : hint + .065) * small.cols)
-            .round()
-            .clamp(left + 2, small.cols);
+    // Long vertical columns can look like a spine. Prefer the central gutter.
+    final searchRadius = hint != null
+        ? .065
+        : width * (verticalText ? .10 : .27);
+    final searchCenter = hint ?? (spread.left + spread.right) / 2;
+    final left = ((searchCenter - searchRadius) * small.cols).round().clamp(
+      0,
+      small.cols - 2,
+    );
+    final right = ((searchCenter + searchRadius) * small.cols).round().clamp(
+      left + 2,
+      small.cols,
+    );
     final rect = cv.Rect(left, 0, right - left, small.rows);
     final strip = cv.Mat.fromMat(gray, roi: rect, copy: true);
     rect.dispose();
-    final blur = cv.gaussianBlur(strip, (3, 3), .8);
-    final edges = cv.canny(blur, 20, 60);
+    final blur = verticalText
+        ? cv.gaussianBlur(strip, (3, 19), .8, sigmaY: 4)
+        : cv.gaussianBlur(strip, (3, 3), .8);
+    final edges = verticalText
+        ? cv.canny(blur, 10, 30)
+        : cv.canny(blur, 20, 60);
     final height = (spread.bottom - spread.top) * small.rows;
     final lines = cv.HoughLinesP(
       edges,
@@ -626,7 +642,7 @@ class DocumentVision {
           }
           // A crease continues through the page height. Text columns and table
           // borders usually supply only a short or intermittent vertical edge.
-          var support = 0;
+          var support = 0, upperSupport = 0, lowerSupport = 0;
           for (var j = 0; j < 40; j++) {
             final y = (y0 + (y1 - y0) * j / 39).round().clamp(
               0,
@@ -642,10 +658,17 @@ class DocumentVision {
                 found = true;
               }
             }
-            if (found) support++;
+            if (found) {
+              support++;
+              if (j < 7) upperSupport++;
+              if (j >= 33) lowerSupport++;
+            }
           }
           final coverage = support / 40;
-          if (coverage < .55) continue;
+          if (coverage < .55 ||
+              (verticalText && (upperSupport < 3 || lowerSupport < 3))) {
+            continue;
+          }
           final score =
               dy.abs() / height + coverage * 2 - (mid - center).abs() / width;
           if (score > best) {
@@ -667,7 +690,11 @@ class DocumentVision {
     }
   }
 
-  static BookLayout detectBook(cv.Mat source, {double? seam}) {
+  static BookLayout detectBook(
+    cv.Mat source, {
+    double? seam,
+    OcrTextLayout textLayout = OcrTextLayout.horizontal,
+  }) {
     final regions = detect(source);
     if (regions.isEmpty) return const BookLayout([]);
     final spread = _largest(regions);
@@ -695,7 +722,12 @@ class DocumentVision {
     } else if (aspect < .95) {
       return BookLayout([spread]);
     } else {
-      final line = _bookSpineLine(source, spread, seam);
+      final line = _bookSpineLine(
+        source,
+        spread,
+        seam,
+        verticalText: textLayout == OcrTextLayout.vertical,
+      );
       final p = spread.corners;
       ScanPoint intersect(ScanPoint a, ScanPoint b, double margin) {
         final dx = b.x - a.x, dy = b.y - a.y;
@@ -784,7 +816,11 @@ class DocumentVision {
     }
     final images = <Uint8List>[];
     try {
-      final layout = detectBook(source, seam: args.$3?.clamp(.15, .85));
+      final layout = detectBook(
+        source,
+        seam: args.$3?.clamp(.15, .85),
+        textLayout: request.bookTextLayout,
+      );
       if (layout.pages.isEmpty) throw StateError('未检测到完整书页边界，请留出四周边缘');
       if (mode != FlattenMode.singlePage && layout.pages.length != 2) {
         throw StateError('未检测到两张完整书页，请留出四周边缘或选择单页展平');
@@ -795,13 +831,19 @@ class DocumentVision {
                   ? 0
                   : request.bookPage.index],
             ]
-          : layout.pages;
+          : [
+              for (final side in request.bookReadingOrder.pages)
+                layout.pages[side.index],
+            ];
       var notice = '';
       for (final region in regions) {
         final page = warp(source, region);
         cv.Mat? flattened;
         try {
-          if (mode != FlattenMode.split) {
+          if (mode != FlattenMode.split &&
+              request.bookTextLayout == OcrTextLayout.vertical) {
+            notice = '竖排书页已矫正透视';
+          } else if (mode != FlattenMode.split) {
             final curves = textCurves(page);
             if (curves.length < 3) {
               notice = '文字行不足，本次仅矫正书页透视';

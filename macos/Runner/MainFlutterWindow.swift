@@ -2,7 +2,9 @@ import Cocoa
 import FlutterMacOS
 import AVFoundation
 import Vision
+import VisionKit
 import CoreImage
+import ImageIO
 
 class MainFlutterWindow: NSWindow {
   private var scanner: NativeScanner?
@@ -160,12 +162,17 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
         case "ocr":
           guard let path = args["path"] as? String else { throw NSError(domain: "缺少图片路径", code: 1) }
           let language = args["language"] as? String ?? "zh-Hans"
+          let url = URL(fileURLWithPath: path)
+          if args["textLayout"] as? String == "vertical" {
+            self.recognizeVerticalText(at: url, language: language, result: result)
+            return
+          }
           let request = VNRecognizeTextRequest()
           request.recognitionLevel = .accurate; request.usesLanguageCorrection = true
           let supported = try VNRecognizeTextRequest.supportedRecognitionLanguages(for: .accurate, revision: request.revision)
           guard supported.contains(language) else { throw NSError(domain: "当前 macOS 不支持所选识别语言，请更新系统或选择 English", code: 1) }
           request.recognitionLanguages = language == "zh-Hans" ? ["zh-Hans", "en-US"] : [language]
-          try VNImageRequestHandler(url: URL(fileURLWithPath: path), options: [:]).perform([request])
+          try VNImageRequestHandler(url: url, options: [:]).perform([request])
           let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
           self.reply(result, text)
         case "barcode":
@@ -206,6 +213,26 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
         default: self.reply(result, FlutterMethodNotImplemented)
         }
       } catch { self.failure(result, error.localizedDescription) }
+    }
+  }
+  private func recognizeVerticalText(at url: URL, language: String, result: @escaping FlutterResult) {
+    guard #available(macOS 13.0, *), ImageAnalyzer.isSupported else {
+      failure(result, "竖排 OCR 需要支持实况文本的 macOS 13 或更新版本")
+      return
+    }
+    Task {
+      do {
+        let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+        let properties = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) }
+        let orientationValue = (properties as? [String: Any])?[kCGImagePropertyOrientation as String] as? UInt32
+        let orientation = orientationValue.flatMap(CGImagePropertyOrientation.init(rawValue:)) ?? .up
+        var configuration = ImageAnalyzer.Configuration(.text)
+        configuration.locales = [language]
+        let analysis = try await ImageAnalyzer().analyze(imageAt: url, orientation: orientation, configuration: configuration)
+        self.reply(result, analysis.transcript)
+      } catch {
+        self.failure(result, error.localizedDescription)
+      }
     }
   }
   @discardableResult

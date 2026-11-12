@@ -98,6 +98,25 @@ void main() {
     expect(c.bookSeamManual, isFalse);
     expect(find.text('自动识别中线'), findsOneWidget);
   });
+  testWidgets('书籍阅读顺序和 OCR 文字方向可以独立选择', (tester) async {
+    final c = await pumpApp(tester);
+    c.setMode(ScanMode.book);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButton<BookReadingOrder>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(BookReadingOrder.rightToLeft.label).last);
+    await tester.pumpAndSettle();
+    expect(c.bookReadingOrder, BookReadingOrder.rightToLeft);
+    expect(c.ocrTextLayout, OcrTextLayout.horizontal);
+    await tester.tap(find.byType(DropdownButton<OcrTextLayout>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(OcrTextLayout.vertical.label).last);
+    await tester.pumpAndSettle();
+    expect(c.ocrTextLayout, OcrTextLayout.vertical);
+    c.setMode(ScanMode.ocr);
+    await tester.pumpAndSettle();
+    expect(find.text(OcrTextLayout.vertical.label), findsOneWidget);
+  });
   testWidgets('拍摄按钮处理时失去焦点后，Ctrl+S 仍可导出', (tester) async {
     final controller = ShortcutController();
     await pumpApp(tester, controller: controller);

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/models.dart';
 import '../../state/app_controller.dart';
 import '../../theme.dart';
 import '../../localization.dart';
@@ -36,7 +37,7 @@ class LeftToolbar extends StatelessWidget {
             _btn(
               Icons.auto_mode,
               context.tr('自动扫描（连拍）'),
-              () => c.toggleAutoScan(),
+              c.mode == ScanMode.barcode ? null : () => c.toggleAutoScan(),
               active: c.autoScan,
             ),
             _btn(

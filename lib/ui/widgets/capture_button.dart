@@ -15,6 +15,8 @@ class CaptureButton extends StatelessWidget {
         ? (c.recording ? context.tr('停止录制') : context.tr('开始录制'))
         : c.mode == ScanMode.ocr
         ? context.tr('识别文字')
+        : c.mode == ScanMode.barcode
+        ? context.tr('开始识别')
         : c.mode == ScanMode.idCard && c.mergeIdSides
         ? context.tr(c.awaitingIdBack ? '拍摄背面并合并' : '拍摄正面')
         : c.autoScan
@@ -45,6 +47,8 @@ class CaptureButton extends StatelessWidget {
                   c.recording ? c.stopRecord() : c.startRecord();
                 } else if (c.mode == ScanMode.ocr) {
                   c.ocrLastCapture();
+                } else if (c.mode == ScanMode.barcode) {
+                  c.recognizeBarcode();
                 } else if (c.autoScan || c.autoMode) {
                   c.toggleAutoScan();
                 } else {

@@ -66,7 +66,7 @@ Future<AppController> pumpApp(
 }
 
 void main() {
-  testWidgets('证件单面双面切换显示步骤', (tester) async {
+  testWidgets('证件单面双面切换显示步骤，条码主按钮执行识别', (tester) async {
     final c = await pumpApp(tester);
     c.setMode(ScanMode.idCard);
     await tester.pumpAndSettle();
@@ -83,6 +83,14 @@ void main() {
     await tester.tap(find.text('重拍正面'));
     await tester.pumpAndSettle();
     expect(find.text('拍摄正面'), findsOneWidget);
+    c.setMode(ScanMode.barcode);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('primary-capture')));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('MOCK-1234567890'), findsOneWidget);
+    expect(find.byTooltip('复制结果'), findsOneWidget);
+    expect(c.pages, isEmpty);
   });
 
   testWidgets('设置内即时切换英日界面，保留日文 OCR 语言', (tester) async {

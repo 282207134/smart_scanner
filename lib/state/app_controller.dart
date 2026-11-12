@@ -71,7 +71,13 @@ class AppController extends ChangeNotifier {
   OcrTextLayout ocrTextLayout = OcrTextLayout.horizontal;
   OcrLanguage ocrLanguage = OcrLanguage.chineseEnglish;
   bool smartEdge = false, removeBg = false, autoScan = false, multiPage = false;
-  bool mergeIdSides = false, qrcode = false;
+  bool mergeIdSides = false;
+  BarcodeMode barcodeMode = BarcodeMode.automatic;
+  bool get qrcode => barcodeMode == BarcodeMode.qr;
+  List<BarcodeResult> barcodeResults = const [];
+  List<BarcodeMode> get availableBarcodeModes => _backend is KmServerBackend
+      ? const [BarcodeMode.barcode, BarcodeMode.qr]
+      : BarcodeMode.values;
   static const idImageScales = [.5, .75, 1.0, 1.25, 1.5, 2.0];
   double idImageScale = 1;
   // Printed card size on the A4 sheet; kept apart from the image scale so a
@@ -107,6 +113,8 @@ class AppController extends ChangeNotifier {
   Uint8List? signatureBytes, stampBytes, _idFront;
   bool get awaitingIdBack => _idFront != null;
   Uint8List? get idFrontPreview => _idFront;
+  Completer<BarcodeEvent>? _barcodePending;
+  bool barcodeAttempted = false;
   double markSize = .2;
   int markCorner = 3;
   Timer? _canvasTimer;
@@ -209,6 +217,9 @@ class AppController extends ChangeNotifier {
   void _attach(ScannerBackend b) {
     _backend = b;
     usingMock = b is MockBackend;
+    if (!availableBarcodeModes.contains(barcodeMode)) {
+      barcodeMode = availableBarcodeModes.first;
+    }
     _frameSub = b.frames.listen(_onFrame);
     _eventSub = b.events.listen(_onEvent);
   }
@@ -675,8 +686,19 @@ class AppController extends ChangeNotifier {
           _setStatus('自动拍摄：{0}', [basename(path)]);
         }
       case BarcodeEvent(:final ok, :final content):
+        final pending = _barcodePending;
+        if (pending == null || pending.isCompleted) return;
         lastBarcode = ok ? content : '';
-        _setStatus(ok ? '识别结果：{0}' : '未识别到条码，请调整位置或光线', [content]);
+        barcodeResults = !ok
+            ? const []
+            : ev.results.isNotEmpty
+            ? ev.results
+            : [BarcodeResult(content, qrcode ? 'QR' : 'Barcode')];
+        if (ev.error case final error?) {
+          pending.completeError(error);
+        } else {
+          pending.complete(ev);
+        }
       case OcrEvent(:final flag, :final progress):
         if (flag == 1) _ocrStatus = AppMessage('OCR 识别中 {0}%', [progress]);
       case IdCardEvent(:final ok):
@@ -760,7 +782,7 @@ class AppController extends ChangeNotifier {
       NameStyle.idCardNum =>
         '$prefix${lastIdCard?.cardNum.isNotEmpty == true ? lastIdCard!.cardNum : stamp}',
       NameStyle.barcode =>
-        '$prefix${lastBarcode.isEmpty ? stamp : lastBarcode}',
+        '$prefix${barcodeResults.isEmpty ? stamp : barcodeResults.first.value}',
       _ => '$prefix$stamp',
     };
     if (advanceSequence && nameStyle == NameStyle.sequence) {
@@ -990,17 +1012,45 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> recognizeBarcode({required bool qrcode}) async {
-    if (!connected || !previewOpen) return;
-    this.qrcode = qrcode;
+  Future<void> recognizeBarcode({bool? qrcode}) async {
+    if (!canCapture) return;
+    if (qrcode != null) setBarcodeType(qrcode);
+    barcodeAttempted = true;
     lastBarcode = '';
+    barcodeResults = const [];
+    _lastError = null;
+    recognizing = true;
+    final pending = _barcodePending = Completer<BarcodeEvent>();
+    _setStatus('正在识别…');
+    notifyListeners();
     try {
-      backend.recognizeBarcodeFromCamera(qrcode ? 1 : 0);
-      _setStatus('正在识别…');
+      backend.recognizeBarcodeFromCamera(barcodeMode.nativeValue);
+      final result = await pending.future.timeout(
+        const Duration(seconds: 12),
+        onTimeout: () => throw const AppMessage('识别超时，请重试'),
+      );
+      _setStatus(result.ok ? '识别成功，可复制结果或保存图片' : '未识别到条码，请调整位置或光线');
     } catch (e) {
       _error('条码识别失败：{0}', [e]);
+    } finally {
+      _barcodePending = null;
+      recognizing = false;
+      if (_openAgain && !_disposed) unawaited(reopenPreview());
+      notifyListeners();
     }
-    notifyListeners();
+  }
+
+  void setBarcodeType(bool value) =>
+      setBarcodeMode(value ? BarcodeMode.qr : BarcodeMode.barcode);
+
+  void setBarcodeMode(BarcodeMode value) {
+    if (busy || autoScan || recording) return;
+    if (!availableBarcodeModes.contains(value)) return;
+    barcodeMode = value;
+    lastBarcode = '';
+    barcodeResults = const [];
+    barcodeAttempted = false;
+    _changed();
   }
 
   void retakeIdFront() {
@@ -1210,6 +1260,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> toggleAutoScan() async {
+    if (mode == ScanMode.barcode) return;
     if (autoScan) {
       _stopLocalAuto();
       _setStatus('自动扫描已停止');
@@ -1375,13 +1426,16 @@ class AppController extends ChangeNotifier {
     }
     if (m == ScanMode.book) cutMode = CutMode.none;
     if (m == ScanMode.idCard) cutMode = CutMode.auto;
-    if (m != ScanMode.document && m != ScanMode.book && m != ScanMode.barcode) {
+    if (m != ScanMode.document && m != ScanMode.book) {
       autoMode = false;
     }
     outputFormat =
         _modeFormats[m] ??
         (m == ScanMode.ocr ? OutputFormat.txt : OutputFormat.jpg);
     _idFront = null;
+    lastBarcode = '';
+    barcodeResults = const [];
+    barcodeAttempted = false;
     flattenMode = FlattenMode.none;
     if (!availableColorEffects.contains(colorEffect)) {
       colorEffect = availableColorEffects.first;
@@ -1762,6 +1816,10 @@ class AppController extends ChangeNotifier {
     );
     smartEdge = p.getBool('smartEdge') ?? false;
     mergeIdSides = p.getBool('mergeIdSides') ?? false;
+    barcodeMode = BarcodeMode.values.firstWhere(
+      (m) => m.name == p.getString('barcodeMode'),
+      orElse: () => BarcodeMode.automatic,
+    );
     final savedScale = p.getDouble('idImageScale');
     idImageScale = idImageScales.contains(savedScale) ? savedScale! : 1;
     final savedPrint = p.getDouble('idPrintScale');
@@ -1801,6 +1859,7 @@ class AppController extends ChangeNotifier {
     await p.setString('ocrTextLayout', ocrTextLayout.name);
     await p.setBool('smartEdge', smartEdge);
     await p.setBool('mergeIdSides', mergeIdSides);
+    await p.setString('barcodeMode', barcodeMode.name);
     await p.setDouble('idImageScale', idImageScale);
     await p.setDouble('idPrintScale', idPrintScale);
     await p.setDouble('idCardWidthMm', idCardWidthMm);

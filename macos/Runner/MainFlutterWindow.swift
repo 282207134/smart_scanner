@@ -185,10 +185,25 @@ final class NativeScanner: NSObject, FlutterStreamHandler, AVCaptureVideoDataOut
         case "barcode":
           guard let image = self.latest, let cg = self.context.createCGImage(image, from: image.extent) else { throw ScannerError("没有摄像头画面") }
           let request = VNDetectBarcodesRequest()
-          if args["qr"] as? Bool == true { request.symbologies = [.qr] }
+          let mode = args["mode"] as? Int ?? (args["qr"] as? Bool == true ? 1 : 0)
+          if mode == 1 { request.symbologies = [.qr] }
           try VNImageRequestHandler(cgImage: cg, options: [:]).perform([request])
-          let matches = (request.results ?? []).filter { args["qr"] as? Bool == true || $0.symbology != .qr }
-          self.reply(result, matches.first?.payloadStringValue ?? "")
+          let matches = (request.results ?? []).filter {
+            mode != 0 || $0.symbology != .qr
+          }.sorted {
+            abs($0.boundingBox.midY - $1.boundingBox.midY) > 0.04
+              ? $0.boundingBox.midY > $1.boundingBox.midY
+              : $0.boundingBox.minX < $1.boundingBox.minX
+          }
+          var seen = Set<String>()
+          let results = matches.compactMap { match -> [String: String]? in
+            guard let value = match.payloadStringValue, !value.isEmpty else { return nil }
+            let format = match.symbology == .qr ? "QR" :
+              match.symbology.rawValue.replacingOccurrences(of: "VNBarcodeSymbology", with: "")
+            guard seen.insert("\(format)\u{0}\(value)").inserted else { return nil }
+            return ["value": value, "format": format]
+          }
+          self.reply(result, results)
         case "setting":
           let key = args["key"] as? String ?? "", value = args["value"]
           switch key {

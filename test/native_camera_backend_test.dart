@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -186,6 +187,62 @@ void main() {
     await expectLater(open(), throwsA(isA<PlatformException>()));
     expect(backend.isOpen, isFalse);
   });
+
+  test('条码识别等待结果、阻止重复请求并保留原生错误', () async {
+    final c = AppController();
+    await c.init(backendOverride: backend, outputDirOverride: output.path);
+    addTearDown(c.dispose);
+    c.connected = c.previewOpen = true;
+    c.setMode(ScanMode.barcode);
+    var result = Completer<String>();
+    messenger.setMockMethodCallHandler(native, (call) async {
+      calls.add(call);
+      if (call.method == 'barcode') return result.future;
+      return null;
+    });
+    final pending = c.recognizeBarcode(qrcode: false);
+    await c.recognizeBarcode(qrcode: false);
+    expect(c.recognizing, isTrue);
+    expect(c.canCapture, isFalse);
+    result.complete('4901234567894');
+    await pending;
+    expect(calls.where((call) => call.method == 'barcode'), hasLength(1));
+    expect(c.lastBarcode, '4901234567894');
+    expect(c.recognizing, isFalse);
+    c.setBarcodeType(true);
+    expect(c.lastBarcode, isEmpty);
+    expect(c.barcodeAttempted, isFalse);
+    result = Completer<String>();
+    final retry = c.recognizeBarcode(qrcode: true);
+    await Future<void>.delayed(Duration.zero);
+    result.completeError(
+      PlatformException(code: 'SCANNER', message: '没有摄像头画面'),
+    );
+    await retry;
+    expect(c.lastError, contains('没有摄像头画面'));
+    expect(c.lastBarcode, isEmpty);
+    expect(c.canCapture, isTrue);
+  }, skip: !Platform.isMacOS);
+
+  test('自动识别同时保留二维码与条码类型和多条内容', () async {
+    final c = AppController();
+    await c.init(backendOverride: backend, outputDirOverride: output.path);
+    addTearDown(c.dispose);
+    c.connected = c.previewOpen = true;
+    c.setMode(ScanMode.barcode);
+    messenger.setMockMethodCallHandler(native, (call) async {
+      if (call.method != 'barcode') return null;
+      expect(call.arguments, {'qr': false, 'mode': 2});
+      return [
+        {'value': '4901234567894', 'format': 'EAN13'},
+        {'value': 'QR-TEST-123', 'format': 'QR'},
+      ];
+    });
+    await c.recognizeBarcode();
+    expect(c.barcodeResults.map((result) => result.format), ['EAN13', 'QR']);
+    expect(c.lastBarcode, '4901234567894\nQR-TEST-123');
+    expect(c.canCapture, isTrue);
+  }, skip: !Platform.isMacOS);
 
   test('帧错误清除连接状态，断开仍释放原生会话', () async {
     await backend.connect();

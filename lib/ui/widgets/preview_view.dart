@@ -1,10 +1,10 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/models.dart';
 import '../../core/document_geometry.dart';
@@ -263,6 +263,67 @@ class _PreviewViewState extends State<PreviewView> {
                         ),
                       ),
                     ),
+                  if (c.previewOpen && c.mode == ScanMode.barcode)
+                    _hint(
+                      context.tr(
+                        c.barcodeMode == BarcodeMode.automatic
+                            ? '将完整条码或二维码放入画面，可同时识别多个'
+                            : c.qrcode
+                            ? '将完整二维码放入画面，避免反光，然后点击“开始识别”'
+                            : '将完整条码及两端空白放入画面，保持清晰，然后点击“开始识别”',
+                      ),
+                    ),
+                  if (c.mode == ScanMode.barcode && c.barcodeAttempted)
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 12,
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        color: AppColors.panel,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxHeight: 140,
+                                ),
+                                child: SingleChildScrollView(
+                                  child: SelectableText(
+                                    c.recognizing || c.lastBarcode.isEmpty
+                                        ? c.statusMessage
+                                        : c.barcodeResults
+                                              .map(
+                                                (result) =>
+                                                    '${context.tr(result.format)} · ${result.value}',
+                                              )
+                                              .join('\n'),
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (c.lastBarcode.isNotEmpty)
+                              IconButton(
+                                tooltip: context.tr('复制结果'),
+                                icon: const Icon(Icons.copy, size: 20),
+                                onPressed: () async {
+                                  await Clipboard.setData(
+                                    ClipboardData(text: c.lastBarcode),
+                                  );
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(context.tr('结果已复制')),
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
                   if (c.previewOpen && !c.busy && c.mode == ScanMode.book)
                     _hint(
                       c.bookSeamManual
@@ -272,6 +333,7 @@ class _PreviewViewState extends State<PreviewView> {
                   if (c.previewOpen &&
                       !c.busy &&
                       c.mode != ScanMode.idCard &&
+                      c.mode != ScanMode.barcode &&
                       (c.cutMode == CutMode.auto ||
                           c.cutMode == CutMode.multiImg))
                     _hint(

@@ -245,10 +245,27 @@ class CaptureEvent extends ScannerEvent {
 }
 
 /// 条码/二维码识别结果
+enum BarcodeMode {
+  automatic('自动（条码＋二维码）', 2),
+  barcode('仅条码', 0),
+  qr('仅二维码', 1);
+
+  const BarcodeMode(this.label, this.nativeValue);
+  final String label;
+  final int nativeValue;
+}
+
+class BarcodeResult {
+  final String value, format;
+  const BarcodeResult(this.value, this.format);
+}
+
 class BarcodeEvent extends ScannerEvent {
   final bool ok;
   final String content;
-  BarcodeEvent(this.ok, this.content);
+  final Object? error;
+  final List<BarcodeResult> results;
+  BarcodeEvent(this.ok, this.content, {this.error, this.results = const []});
 }
 
 /// OCR 结果

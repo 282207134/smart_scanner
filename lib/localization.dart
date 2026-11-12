@@ -541,6 +541,7 @@ const _translations = <String, (String, String)>{
   '拍摄背面并合并': ('Capture back & combine', '裏面を撮影して結合'),
   '重拍正面': ('Retake front', '表面を撮り直す'),
   '请放置正面并拍摄': ('Place the front side up and capture.', '表面を上にして撮影してください'),
+  '保存图片': ('Save image', '画像を保存'),
   '第 2 步 · 翻到背面，绿框贴合卡片后拍摄，自动合并': (
     'Step 2 · Turn the card over. Check the green edges, then capture to combine.',
     '手順 2 · 裏返し、緑の枠を確認して撮影すると結合されます',
@@ -554,6 +555,21 @@ const _translations = <String, (String, String)>{
     'カードを 1 枚置き、緑の枠を確認して撮影してください。両面の撮影も選べます',
   ),
   '正面已暂存 · 等待背面': ('Front captured · Back pending', '表面を一時保存 · 裏面の撮影待ち'),
+  '将完整二维码放入画面，避免反光，然后点击“开始识别”': (
+    'Keep the entire QR code in view without glare, then click Recognize code.',
+    'QR コード全体を反射のない状態で写し、「認識を開始」を押してください',
+  ),
+  '将完整条码及两端空白放入画面，保持清晰，然后点击“开始识别”': (
+    'Keep the entire barcode and its side margins in focus, then click Recognize code.',
+    'バーコード全体と左右の余白を鮮明に写し、「認識を開始」を押してください',
+  ),
+  '复制结果': ('Copy result', '結果をコピー'),
+  '结果已复制': ('Result copied', '結果をコピーしました'),
+  '识别超时，请重试': ('Recognition timed out. Try again.', '認識がタイムアウトしました。再試行してください'),
+  '识别成功，可复制结果或保存图片': (
+    'Recognized. Copy the result or save an image.',
+    '認識しました。結果をコピーするか、画像を保存できます',
+  ),
   '证件模式': ('Card mode', 'カードの撮影方式'),
   '双面（各拍一次）': ('Both sides (one at a time)', '両面（1 面ずつ撮影）'),
   '单面': ('One side', '片面'),
@@ -572,4 +588,12 @@ const _translations = <String, (String, String)>{
     'The card layout exceeds A4. Reduce the print scale or check the crop.',
     'A4 の範囲を超えています。印刷倍率を下げるか、切り抜きを確認してください',
   ),
+  '自动（条码＋二维码）': ('Auto (barcodes + QR)', '自動（バーコード＋QR）'),
+  '仅条码': ('Barcodes only', 'バーコードのみ'),
+  '仅二维码': ('QR codes only', 'QR コードのみ'),
+  '将完整条码或二维码放入画面，可同时识别多个': (
+    'Keep complete barcodes or QR codes in view. Multiple codes can be recognized together.',
+    'バーコードや QR コード全体を写してください。複数を同時に認識できます',
+  ),
+  'Barcode': ('Barcode', 'バーコード'),
 };

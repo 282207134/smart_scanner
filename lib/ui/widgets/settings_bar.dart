@@ -90,9 +90,7 @@ class _SettingsBarState extends State<SettingsBar> {
                       : context.tr('自动识别中线'),
                 ),
               ),
-            if (c.mode == ScanMode.document ||
-                book ||
-                c.mode == ScanMode.barcode) ...[
+            if (c.mode == ScanMode.document || book) ...[
               _select(
                 context.tr('扫描模式'),
                 c.autoMode,
@@ -300,26 +298,19 @@ class _SettingsBarState extends State<SettingsBar> {
                 ),
             ],
             if (c.mode == ScanMode.barcode) ...[
-              _select(context.tr('识别类型'), c.qrcode, [false, true], (v) {
-                c.qrcode = v;
-                c.notifyListeners();
-              }, format: (v) => v ? '二维码' : '条码'),
-              TextButton.icon(
-                onPressed: () => c.recognizeBarcode(qrcode: c.qrcode),
-                icon: const Icon(Icons.qr_code_scanner, size: 16),
-                label: Text(context.tr('开始识别')),
+              _select(
+                context.tr('识别类型'),
+                c.barcodeMode,
+                c.availableBarcodeModes,
+                c.setBarcodeMode,
+                format: (value) => value.label,
+                width: 196,
               ),
-              if (c.lastBarcode.isNotEmpty)
-                SizedBox(
-                  width: 240,
-                  child: SelectableText(
-                    c.lastBarcode,
-                    style: const TextStyle(
-                      color: AppColors.accent,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
+              TextButton.icon(
+                onPressed: c.canCapture ? () => c.capture() : null,
+                icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                label: Text(context.tr('保存图片')),
+              ),
             ],
             if (ocr) ...[
               TextButton.icon(

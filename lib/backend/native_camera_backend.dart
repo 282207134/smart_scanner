@@ -208,12 +208,32 @@ class NativeCameraBackend implements ScannerBackend {
     }
     unawaited(
       _channel
-          .invokeMethod<String>('barcode', {'qr': type == 1})
-          .then((text) {
-            _events.add(BarcodeEvent(text?.isNotEmpty == true, text ?? ''));
+          .invokeMethod<dynamic>('barcode', {'qr': type == 1, 'mode': type})
+          .then((response) {
+            final results = switch (response) {
+              final List list => [
+                for (final item in list)
+                  if (item case {
+                    'value': final String value,
+                    'format': final String format,
+                  })
+                    BarcodeResult(value, format),
+              ],
+              final String value when value.isNotEmpty => [
+                BarcodeResult(value, type == 1 ? 'QR' : 'Barcode'),
+              ],
+              _ => <BarcodeResult>[],
+            };
+            _events.add(
+              BarcodeEvent(
+                results.isNotEmpty,
+                results.map((result) => result.value).join('\n'),
+                results: results,
+              ),
+            );
           })
           .catchError((Object e) {
-            _events.add(BarcodeEvent(false, ''));
+            _events.add(BarcodeEvent(false, '', error: e));
           }),
     );
   }
